@@ -1,225 +1,344 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import 'todo.dart';
-import 'model.dart';
+import 'base_widgets.dart';
+import 'create_event_page.dart';
+import 'event_data.dart';
 
 void main() {
-  runApp(
-    ChangeNotifierProvider(
-      create: (context) => TodoModel(),
-      child: const MyApp(),
-    ),
-  );
+  runApp(const ActivityMatchApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class ActivityMatchApp extends StatelessWidget {
+  const ActivityMatchApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ToDo App',
-      home: const MyHomePage(),
       debugShowCheckedModeBanner: false,
+      title: 'ActivityMatch',
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: backgroundColor,
+        fontFamily: 'Arial',
+      ),
+      home: const TicketsPage(),
     );
   }
 }
 
-class Todowidget extends StatelessWidget {
-  final Todo item;
-
-  const Todowidget({super.key, required this.item});
+class TicketsPage extends StatefulWidget {
+  const TicketsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 80,
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 20),
-          IconButton(
-            onPressed: () {
-              context.read<TodoModel>().toggleTodo(item);
-            },
-            icon: Icon(
-              item.done
-                  ? Icons.check_box_outlined
-                  : Icons.check_box_outline_blank,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 25),
-          Expanded(
-            child: Text(
-              item.title,
-              style: TextStyle(
-                fontSize: 25,
-                decoration: item.done
-                    ? TextDecoration.lineThrough
-                    : TextDecoration.none,
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed: () {
-              context.read<TodoModel>().deleteTodo(item);
-            },
-            icon: const Icon(Icons.close, size: 32),
-          ),
-          const SizedBox(width: 20),
-        ],
-      ),
-    );
-  }
+  State<TicketsPage> createState() => _TicketsPageState();
 }
 
-class AddTodoPage extends StatefulWidget {
-  const AddTodoPage({super.key});
+class _TicketsPageState extends State<TicketsPage> {
+  final searchController = TextEditingController();
 
-  @override
-  State<AddTodoPage> createState() => _AddTodoPageState();
-}
+  int selectedNavigationIndex = 1;
+  String selectedTicketCategory = 'Liked';
+  bool isLiked = true;
 
-class _AddTodoPageState extends State<AddTodoPage> {
-  final TextEditingController controller = TextEditingController();
+  final ticketCategories = [
+    'Liked',
+    'Queued',
+    'Attending',
+    'Hosting',
+  ];
 
   @override
   void dispose() {
-    controller.dispose();
+    searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.grey,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
-        title: const Text(
-          'CLS055 TODO',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.normal,
-            fontSize: 28,
-          ),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 50),
-        child: Column(
-          children: [
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'What are you going to do?',
-                hintStyle: TextStyle(fontSize: 20),
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 20,
-                ),
+      backgroundColor: backgroundColor,
+      extendBody: true,
+
+      body: SafeArea(
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  _pageTitle(),
+                  const SizedBox(height: 25),
+
+                  SearchSection(
+                    controller: searchController,
+                    onSearch: (text) {
+                      setState(() {});
+                    },
+                    onFilterPressed: () {
+                      openFilter(
+                        context,
+                        filterContent: _ticketFilter(),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 15),
+                  _ticketCategorySelector(),
+                  const SizedBox(height: 25),
+
+                  _ticketContent(),
+                ]),
               ),
             ),
-            const SizedBox(height: 50),
-            TextButton.icon(
-              onPressed: () async {
-                final title = controller.text.trim();
 
-                if (title.isEmpty) {
-                  return;
-                }
-
-                await context.read<TodoModel>().addTodo(title);
-
-                if (context.mounted) {
-                  Navigator.pop(context);
-                }
-              },
-              icon: const Icon(Icons.add, color: Colors.black, size: 28),
-              label: const Text(
-                'ADD',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 110),
             ),
           ],
         ),
       ),
+
+      bottomNavigationBar: BottomNavigation(
+        selectedIndex: selectedNavigationIndex,
+        onSelected: (index) {
+          setState(() {
+            selectedNavigationIndex = index;
+          });
+        },
+      ),
     );
   }
-}
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key});
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  @override
-  void initState() {
-    super.initState();
-
-    Future.microtask(() {
-      context.read<TodoModel>().loadTodos();
-    });
+  Widget _pageTitle() {
+    return const Center(
+      child: Text(
+        'Your Tickets',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 27,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.grey,
-        centerTitle: true,
-        title: const Text(
-          'CLS055 TODO',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.normal),
+  Widget _ticketCategorySelector() {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF211D19),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.08),
         ),
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.black),
-            onSelected: (value) {
-              context.read<TodoModel>().setFilter(value);
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'all', child: Text('all')),
-              const PopupMenuItem(value: 'done', child: Text('done')),
-              const PopupMenuItem(value: 'undone', child: Text('undone')),
-            ],
+      ),
+      child: Row(
+        children: ticketCategories.map((category) {
+          final selected = category == selectedTicketCategory;
+
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  selectedTicketCategory = category;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? const Color(0xFF554E47)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                child: Text(
+                  category,
+                  style: TextStyle(
+                    color: selected
+                        ? Colors.white
+                        : Colors.white70,
+                    fontSize: 12,
+                    fontWeight: selected
+                        ? FontWeight.w600
+                        : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _ticketContent() {
+    if (selectedTicketCategory == 'Liked' && isLiked) {
+      return EventCard(
+        imageUrl:
+            'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
+        title: 'Beginner Padel Night',
+        date: 'Wed 15 Oct',
+        location: 'Padel Center',
+        availableSpots: 2,
+        showFavoriteButton: true,
+        isLiked: true,
+        onLikePressed: () {
+          setState(() {
+            isLiked = false;
+          });
+        },
+        onTap: () {},
+      );
+    }
+
+    if (selectedTicketCategory == 'Queued') {
+      return EventCard(
+        imageUrl:
+            'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
+        title: 'Beginner Padel Night',
+        date: 'Wed 15 Oct',
+        location: 'Padel Center',
+        availableSpots: 0,
+        queuePosition: 4,
+        onTap: () {},
+      );
+    }
+
+    if (selectedTicketCategory == 'Hosting') {
+      return Column(
+        children: [
+          _hostingHeader(),
+          const SizedBox(height: 15),
+
+          ...EventData.hostedEvents.map((event) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 15),
+              child: EventCard(
+                imageUrl: event.imageUrl,
+                title: event.title,
+                date: event.date,
+                location: event.location,
+                availableSpots: event.availableSpots,
+                onTap: () {},
+              ),
+            );
+          }),
+        ],
+      );
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 40),
+        child: Text(
+          'No $selectedTicketCategory events',
+          style: const TextStyle(
+            color: Colors.white54,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _hostingHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          'Your hosted events',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+
+        GestureDetector(
+          onTap: _createEvent,
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFF9800),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.add_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _createEvent() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CreateEventPage(),
+      ),
+    );
+
+    setState(() {});
+  }
+
+  Widget _ticketFilter() {
+    return FilterBase(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Filter tickets',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+
+          const SizedBox(height: 25),
+
+          const Text(
+            'Ticket filters will go here',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 15,
+            ),
+          ),
+
+          const SizedBox(height: 25),
+
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF9800),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(26),
+                ),
+              ),
+              child: const Text(
+                'Apply filters',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ),
         ],
-      ),
-      body: Consumer<TodoModel>(
-        builder: (context, model, child) {
-          return ListView(
-            children: model.todos
-                .map((item) => Todowidget(item: item))
-                .toList(),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.grey,
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AddTodoPage()),
-          );
-        },
-        child: const Icon(Icons.add, color: Colors.white, size: 40),
       ),
     );
   }
