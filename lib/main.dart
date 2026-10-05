@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+
+import 'profile_page.dart';
+import 'login_page.dart';
 import 'todo.dart';
 import 'model.dart';
+
 
 void main() {
   runApp(
@@ -13,29 +17,39 @@ void main() {
   );
 }
 
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ToDo App',
-      home: const MyHomePage(),
+      title: 'ActivityMatch',
+      //home: const ProfilePage(),
+      home: const LoginPage(),
+      //home: const NotificationsPage(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
+
 class Todowidget extends StatelessWidget {
   final Todo item;
 
+
   const Todowidget({super.key, required this.item});
+
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 80,
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade300),
+        ),
       ),
       child: Row(
         children: [
@@ -67,7 +81,10 @@ class Todowidget extends StatelessWidget {
             onPressed: () {
               context.read<TodoModel>().deleteTodo(item);
             },
-            icon: const Icon(Icons.close, size: 32),
+            icon: const Icon(
+              Icons.close,
+              size: 32,
+            ),
           ),
           const SizedBox(width: 20),
         ],
@@ -76,21 +93,26 @@ class Todowidget extends StatelessWidget {
   }
 }
 
+
 class AddTodoPage extends StatefulWidget {
   const AddTodoPage({super.key});
+
 
   @override
   State<AddTodoPage> createState() => _AddTodoPageState();
 }
 
+
 class _AddTodoPageState extends State<AddTodoPage> {
   final TextEditingController controller = TextEditingController();
+
 
   @override
   void dispose() {
     controller.dispose();
     super.dispose();
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +121,10 @@ class _AddTodoPageState extends State<AddTodoPage> {
         backgroundColor: Colors.grey,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: const Icon(
+            Icons.arrow_back,
+            color: Colors.black,
+          ),
           onPressed: () {
             Navigator.pop(context);
           },
@@ -114,7 +139,10 @@ class _AddTodoPageState extends State<AddTodoPage> {
         ),
       ),
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 50),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 40,
+          vertical: 50,
+        ),
         child: Column(
           children: [
             TextField(
@@ -134,17 +162,24 @@ class _AddTodoPageState extends State<AddTodoPage> {
               onPressed: () async {
                 final title = controller.text.trim();
 
+
                 if (title.isEmpty) {
                   return;
                 }
 
+
                 await context.read<TodoModel>().addTodo(title);
+
 
                 if (context.mounted) {
                   Navigator.pop(context);
                 }
               },
-              icon: const Icon(Icons.add, color: Colors.black, size: 28),
+              icon: const Icon(
+                Icons.add,
+                color: Colors.black,
+                size: 28,
+              ),
               label: const Text(
                 'ADD',
                 style: TextStyle(
@@ -161,22 +196,27 @@ class _AddTodoPageState extends State<AddTodoPage> {
   }
 }
 
+
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
+
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
+
 
 class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
 
+
     Future.microtask(() {
       context.read<TodoModel>().loadTodos();
     });
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -186,18 +226,33 @@ class _MyHomePageState extends State<MyHomePage> {
         centerTitle: true,
         title: const Text(
           'CLS055 TODO',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.normal),
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.normal,
+          ),
         ),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.black),
+            icon: const Icon(
+              Icons.more_vert,
+              color: Colors.black,
+            ),
             onSelected: (value) {
               context.read<TodoModel>().setFilter(value);
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 'all', child: Text('all')),
-              const PopupMenuItem(value: 'done', child: Text('done')),
-              const PopupMenuItem(value: 'undone', child: Text('undone')),
+              const PopupMenuItem(
+                value: 'all',
+                child: Text('all'),
+              ),
+              const PopupMenuItem(
+                value: 'done',
+                child: Text('done'),
+              ),
+              const PopupMenuItem(
+                value: 'undone',
+                child: Text('undone'),
+              ),
             ],
           ),
         ],
@@ -216,11 +271,18 @@ class _MyHomePageState extends State<MyHomePage> {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const AddTodoPage()),
+            MaterialPageRoute(
+              builder: (context) => const AddTodoPage(),
+            ),
           );
         },
-        child: const Icon(Icons.add, color: Colors.white, size: 40),
+        child: const Icon(
+          Icons.add,
+          color: Colors.white,
+          size: 40,
+        ),
       ),
     );
   }
 }
+
