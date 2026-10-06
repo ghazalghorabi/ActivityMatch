@@ -1,8 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'base_widgets.dart';
-import 'model.dart';
 import 'event_data.dart';
+import 'model.dart';
+
+// ============================================================
+// CREATE EVENT PAGE
+// ============================================================
 
 class CreateEventPage extends StatefulWidget {
   const CreateEventPage({super.key});
@@ -12,24 +18,17 @@ class CreateEventPage extends StatefulWidget {
 }
 
 class _CreateEventPageState extends State<CreateEventPage> {
-  // ============================================================
-  // VARIABLES
-  // ============================================================
+  final title = TextEditingController();
+  final description = TextEditingController();
+  final location = TextEditingController();
+  final startTime = TextEditingController();
+  final endTime = TextEditingController();
 
-  final titleController = TextEditingController();
-  final descriptionController = TextEditingController();
-  final locationController = TextEditingController();
-  final otherActivityController = TextEditingController();
-  final startTimeController = TextEditingController(text: '18:00');
-  final endTimeController = TextEditingController();
-
-  String selectedActivity = 'Padel';
-  String? openTimeMenu;
-
-  DateTime? selectedDate;
-  int participants = 8;
-
-  RangeValues ageRange = const RangeValues(20, 35);
+  XFile? image;
+  DateTime? date;
+  String activity = 'Padel';
+  int capacity = 8;
+  RangeValues age = const RangeValues(18, 70);
 
   final activities = [
     'Padel',
@@ -39,143 +38,120 @@ class _CreateEventPageState extends State<CreateEventPage> {
     'Walk',
     'Gym',
     'Gaming',
-    'Other',
   ];
-
-  final tags = [
-    'Sports',
-    'Social',
-    'Outdoor',
-    'Nightlife',
-    'Beginner friendly',
-  ];
-
-  final Set<String> selectedTags = {};
 
   @override
   void dispose() {
-    titleController.dispose();
-    descriptionController.dispose();
-    locationController.dispose();
-    otherActivityController.dispose();
-    startTimeController.dispose();
-    endTimeController.dispose();
+    title.dispose();
+    description.dispose();
+    location.dispose();
+    startTime.dispose();
+    endTime.dispose();
     super.dispose();
   }
-
-  // ============================================================
-  // PAGE
-  // ============================================================
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundColor,
-
       appBar: AppBar(
         backgroundColor: backgroundColor,
         title: const Text('Create Event'),
-        centerTitle: true,
       ),
-
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
-
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _title('Event title'),
-            _field(
-              titleController,
-              'Give your event a name',
+            _photo(),
+            _label('Event title'),
+            _field(title, 'Event name'),
+            _label('Activity'),
+            Wrap(
+              spacing: 8,
+              children: activities.map((a) {
+                return ChoiceChip(
+                  label: Text(a),
+                  selected: activity == a,
+                  showCheckmark: false,
+                  selectedColor: const Color(0xFFFF9800),
+                  onSelected: (_) => setState(() => activity = a),
+                );
+              }).toList(),
             ),
-
-            _space(),
-
-            _title('Activity'),
-            _activities(),
-
-            if (selectedActivity == 'Other') ...[
-              const SizedBox(height: 12),
-              _field(
-                otherActivityController,
-                'What activity is it?',
-              ),
-            ],
-
-            _space(),
-
-            _title('Description'),
+            _label('Description'),
             _field(
-              descriptionController,
-              'Tell people about the event...',
-              maxLines: 4,
+              description,
+              'Tell people about the event',
+              lines: 3,
             ),
-
-            _space(),
-
-            _title('Date'),
-            _dateSelector(),
-
-            _space(),
-
-            _title('Time'),
-
+            _label('Date'),
+            _box(
+              Icons.calendar_today_outlined,
+              date == null
+                  ? 'Select date'
+                  : '${date!.day}/${date!.month}/${date!.year}',
+              _pickDate,
+            ),
+            _label('Time'),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: _timeField(
-                    label: 'Start time',
-                    controller: startTimeController,
-                    menuName: 'start',
-                  ),
-                ),
-
+                Expanded(child: _timeField(startTime, 'Start time')),
                 const SizedBox(width: 10),
-
-                Expanded(
-                  child: _timeField(
-                    label: 'End time (optional)',
-                    controller: endTimeController,
-                    menuName: 'end',
-                  ),
-                ),
+                Expanded(child: _timeField(endTime, 'End time')),
               ],
             ),
-
-            _space(),
-
-            _title('Location'),
+            _label('Location'),
             _field(
-              locationController,
+              location,
               'Where is the event?',
               icon: Icons.location_on_outlined,
             ),
-
-            _space(),
-
-            _title('Number of participants'),
-            _participants(),
-
-            _space(),
-
-            _title('Age range'),
-            _ageSelector(),
-
-            _space(),
-
-            _title('Tags'),
-            _tags(),
-
-            _space(),
-
-            _title('Add a picture'),
-            _imagePicker(),
-
-            const SizedBox(height: 35),
-
-            _createButton(),
+            _label('Participants'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: capacity > 1
+                      ? () => setState(() => capacity--)
+                      : null,
+                  icon: const Icon(Icons.remove),
+                ),
+                Text(
+                  '$capacity people',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                IconButton(
+                  onPressed: () => setState(() => capacity++),
+                  icon: const Icon(Icons.add),
+                ),
+              ],
+            ),
+            _label('Age'),
+            Text(
+              '${age.start.round()} – ${age.end.round() == 70 ? '70+' : age.end.round()} years',
+            ),
+            RangeSlider(
+              values: age,
+              min: 18,
+              max: 70,
+              divisions: 52,
+              activeColor: const Color(0xFFFF9800),
+              onChanged: (value) => setState(() => age = value),
+            ),
+            const SizedBox(height: 25),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _create,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF9800),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Create Event'),
+              ),
+            ),
           ],
         ),
       ),
@@ -183,101 +159,125 @@ class _CreateEventPageState extends State<CreateEventPage> {
   }
 
   // ============================================================
-  // GENERAL WIDGETS
+  // PHOTO
   // ============================================================
 
-  Widget _title(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
+  Widget _photo() => GestureDetector(
+        onTap: () async {
+          final picked = await ImagePicker().pickImage(
+            source: ImageSource.gallery,
+          );
+          if (picked != null) setState(() => image = picked);
+        },
+        child: Container(
+          height: 180,
+          width: double.infinity,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: const Color(0xFF292521),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: image != null
+              ? Image.file(File(image!.path), fit: BoxFit.cover)
+              : const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add_photo_alternate_outlined, size: 35),
+                    SizedBox(height: 8),
+                    Text('Add photo *'),
+                  ],
+                ),
         ),
-      ),
-    );
-  }
+      );
 
-  Widget _space() {
-    return const SizedBox(height: 25);
-  }
+  // ============================================================
+  // FIELDS
+  // ============================================================
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(top: 24, bottom: 8),
+        child: Text(
+          '$text *',
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
 
   Widget _field(
     TextEditingController controller,
     String hint, {
-    int maxLines = 1,
+    int lines = 1,
     IconData? icon,
-  }) {
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 14,
-      ),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(
-          color: Colors.white38,
+  }) =>
+      TextField(
+        controller: controller,
+        maxLines: lines,
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: icon == null ? null : Icon(icon),
+          filled: true,
+          fillColor: const Color(0xFF292521),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
         ),
-        prefixIcon: icon == null
-            ? null
-            : Icon(
-                icon,
-                color: Colors.white54,
-              ),
-        filled: true,
-        fillColor: const Color(0xFF292521),
-        border: OutlineInputBorder(
+      );
+
+  Widget _box(IconData icon, String text, VoidCallback tap) => ListTile(
+        onTap: tap,
+        tileColor: const Color(0xFF292521),
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide.none,
         ),
-      ),
-    );
-  }
+        leading: Icon(icon),
+        title: Text(text),
+      );
 
   // ============================================================
-  // ACTIVITY
+  // TIME
   // ============================================================
 
-  Widget _activities() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: activities.map((activity) {
-        final selected = selectedActivity == activity;
+  Widget _timeField(
+    TextEditingController controller,
+    String hint,
+  ) {
+    final times = [
+      for (var h = 0; h < 24; h++)
+        for (var m in [0, 15, 30, 45])
+          '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}',
+    ];
 
-        return ChoiceChip(
-          label: Text(activity),
-          selected: selected,
-          showCheckmark: false,
+    return Autocomplete<String>(
+      optionsBuilder: (value) {
+        final input = value.text.replaceAll(':', '');
+        if (input.isEmpty) return const Iterable<String>.empty();
 
-          selectedColor: const Color(0xFFFF9800),
-          backgroundColor: const Color(0xFF292521),
-
-          side: BorderSide(
-            color: Colors.white.withOpacity(0.10),
-          ),
-
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-
-          labelStyle: TextStyle(
-            color: selected
-                ? Colors.white
-                : Colors.white70,
-          ),
-
-          onSelected: (_) {
-            setState(() {
-              selectedActivity = activity;
-            });
-          },
+        return times.where(
+          (t) => t.replaceAll(':', '').startsWith(input),
         );
-      }).toList(),
+      },
+      onSelected: (value) => controller.text = value,
+      fieldViewBuilder: (_, textController, focus, __) {
+        return TextField(
+          controller: textController,
+          focusNode: focus,
+          keyboardType: TextInputType.number,
+          onChanged: (value) => controller.text = value,
+          decoration: InputDecoration(
+            hintText: hint,
+            prefixIcon: const Icon(Icons.access_time),
+            filled: true,
+            fillColor: const Color(0xFF292521),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -285,492 +285,56 @@ class _CreateEventPageState extends State<CreateEventPage> {
   // DATE
   // ============================================================
 
-  Widget _dateSelector() {
-    return GestureDetector(
-      onTap: _selectDate,
-
-      child: Container(
-        height: 55,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 15,
-        ),
-
-        decoration: BoxDecoration(
-          color: const Color(0xFF292521),
-          borderRadius: BorderRadius.circular(18),
-        ),
-
-        child: Row(
-          children: [
-            const Icon(
-              Icons.calendar_today_outlined,
-              color: Colors.white54,
-              size: 20,
-            ),
-
-            const SizedBox(width: 10),
-
-            Text(
-              selectedDate == null
-                  ? 'Select date'
-                  : '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _selectDate() async {
-    final date = await showDatePicker(
+  Future<void> _pickDate() async {
+    final selected = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
       firstDate: DateTime.now(),
-      lastDate: DateTime(2030),
+      lastDate: DateTime(2035),
     );
 
-    if (date != null) {
-      setState(() {
-        selectedDate = date;
-      });
-    }
-  }
-
-  // ============================================================
-  // TIME
-  // ============================================================
-
-  Widget _timeField({
-    required String label,
-    required TextEditingController controller,
-    required String menuName,
-  }) {
-    final isOpen = openTimeMenu == menuName;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 13,
-          ),
-        ),
-
-        const SizedBox(height: 7),
-
-        TextField(
-          controller: controller,
-          keyboardType: TextInputType.datetime,
-
-          onTap: () {
-            setState(() {
-              openTimeMenu = menuName;
-            });
-          },
-
-          onChanged: (_) {
-            setState(() {
-              openTimeMenu = menuName;
-            });
-          },
-
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-          ),
-
-          decoration: InputDecoration(
-            hintText: menuName == 'start'
-                ? '18:00'
-                : '--:--',
-
-            hintStyle: const TextStyle(
-              color: Colors.white38,
-            ),
-
-            prefixIcon: const Icon(
-              Icons.access_time_rounded,
-              color: Colors.white54,
-              size: 20,
-            ),
-
-            suffixIcon: IconButton(
-              onPressed: () {
-                setState(() {
-                  openTimeMenu =
-                      isOpen ? null : menuName;
-                });
-              },
-              icon: Icon(
-                isOpen
-                    ? Icons.keyboard_arrow_up
-                    : Icons.keyboard_arrow_down,
-                color: Colors.white54,
-              ),
-            ),
-
-            filled: true,
-            fillColor: const Color(0xFF292521),
-
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-
-        if (isOpen)
-          Container(
-            margin: const EdgeInsets.only(top: 5),
-
-            decoration: BoxDecoration(
-              color: const Color(0xFF292521),
-              borderRadius: BorderRadius.circular(15),
-            ),
-
-            child: Column(
-              children: _timeOptions(
-                controller,
-                menuName,
-              ).map((time) {
-                return ListTile(
-                  dense: true,
-
-                  title: Text(
-                    time,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
-                  ),
-
-                  onTap: () {
-                    setState(() {
-                      controller.text = time;
-                      openTimeMenu = null;
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-          ),
-      ],
-    );
-  }
-
-  List<String> _timeOptions(
-    TextEditingController controller,
-    String menuName,
-  ) {
-    String value = controller.text.trim();
-
-    // If end time is empty, use start time as base.
-    if (menuName == 'end' && value.isEmpty) {
-      value = startTimeController.text;
-    }
-
-    final parts = value.split(':');
-
-    int hour = int.tryParse(parts.first) ?? 18;
-
-    int minute = parts.length > 1
-        ? int.tryParse(parts[1]) ?? 0
-        : 0;
-
-    hour = hour.clamp(0, 23);
-    minute = minute.clamp(0, 59);
-
-    int start = hour * 60 + minute;
-
-    // First end-time suggestion is 15 minutes later.
-    if (menuName == 'end' &&
-        controller.text.isEmpty) {
-      start += 15;
-    }
-
-    return List.generate(5, (index) {
-      final total =
-          (start + index * 15) % (24 * 60);
-
-      final hour = total ~/ 60;
-      final minute = total % 60;
-
-      return '${hour.toString().padLeft(2, '0')}:'
-          '${minute.toString().padLeft(2, '0')}';
-    });
-  }
-
-  // ============================================================
-  // PARTICIPANTS
-  // ============================================================
-
-  Widget _participants() {
-    return Container(
-      height: 55,
-
-      decoration: BoxDecoration(
-        color: const Color(0xFF292521),
-        borderRadius: BorderRadius.circular(18),
-      ),
-
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () {
-              if (participants > 2) {
-                setState(() {
-                  participants--;
-                });
-              }
-            },
-            icon: const Icon(Icons.remove),
-          ),
-
-          Expanded(
-            child: Text(
-              '$participants people',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-
-          IconButton(
-            onPressed: () {
-              setState(() {
-                participants++;
-              });
-            },
-            icon: const Icon(Icons.add),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ============================================================
-  // AGE RANGE
-  // ============================================================
-
-  Widget _ageSelector() {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment:
-              MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '${ageRange.start.round()} years',
-              style: const TextStyle(
-                color: Colors.white70,
-              ),
-            ),
-
-            Text(
-              '${ageRange.end.round()} years',
-              style: const TextStyle(
-                color: Colors.white70,
-              ),
-            ),
-          ],
-        ),
-
-        RangeSlider(
-          values: ageRange,
-          min: 18,
-          max: 70,
-          divisions: 52,
-          activeColor: const Color(0xFFFF9800),
-          inactiveColor: const Color(0xFF292521),
-
-          onChanged: (value) {
-            setState(() {
-              ageRange = value;
-            });
-          },
-        ),
-      ],
-    );
-  }
-
-  // ============================================================
-  // TAGS
-  // ============================================================
-
-  Widget _tags() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-
-      children: tags.map((tag) {
-        final selected = selectedTags.contains(tag);
-
-        return FilterChip(
-          label: Text(tag),
-          selected: selected,
-          showCheckmark: false,
-
-          selectedColor: const Color(0xFFFF9800),
-          backgroundColor: const Color(0xFF292521),
-
-          side: BorderSide(
-            color: Colors.white.withOpacity(0.10),
-          ),
-
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-
-          labelStyle: TextStyle(
-            color: selected
-                ? Colors.white
-                : Colors.white70,
-          ),
-
-          onSelected: (_) {
-            setState(() {
-              if (selected) {
-                selectedTags.remove(tag);
-              } else {
-                selectedTags.add(tag);
-              }
-            });
-          },
-        );
-      }).toList(),
-    );
-  }
-
-  // ============================================================
-  // IMAGE
-  // ============================================================
-
-  Widget _imagePicker() {
-    return Container(
-      width: double.infinity,
-      height: 120,
-
-      decoration: BoxDecoration(
-        color: const Color(0xFF292521),
-        borderRadius: BorderRadius.circular(18),
-
-        border: Border.all(
-          color: Colors.white.withOpacity(0.10),
-        ),
-      ),
-
-      child: const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.add_photo_alternate_outlined,
-            color: Colors.white54,
-            size: 32,
-          ),
-
-          SizedBox(height: 8),
-
-          Text(
-            'Add photo',
-            style: TextStyle(
-              color: Colors.white54,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
+    if (selected != null) setState(() => date = selected);
   }
 
   // ============================================================
   // CREATE EVENT
   // ============================================================
 
-  Widget _createButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 55,
+  void _create() {
+    final validTime = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
 
-      child: ElevatedButton(
-        onPressed: _createEvent,
-
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFF9800),
-          foregroundColor: Colors.white,
-
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-        ),
-
-        child: const Text(
-          'Create Event',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _createEvent() {
-    if (titleController.text.trim().isEmpty ||
-        descriptionController.text.trim().isEmpty ||
-        locationController.text.trim().isEmpty ||
-        selectedDate == null ||
-        startTimeController.text.trim().isEmpty) {
+    if (image == null ||
+        title.text.trim().isEmpty ||
+        description.text.trim().isEmpty ||
+        location.text.trim().isEmpty ||
+        date == null ||
+        !validTime.hasMatch(startTime.text) ||
+        !validTime.hasMatch(endTime.text)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Please fill in all required fields',
-          ),
+          content: Text('Please fill in all required fields'),
         ),
       );
-
       return;
     }
 
-    final event = ActivityEvent(
-      title: titleController.text.trim(),
-
-      date:
-          '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
-
-      location: locationController.text.trim(),
-
-      availableSpots: participants,
-
-      imageUrl: '',
-
-      time: startTimeController.text.trim(),
-
-      description:
-          descriptionController.text.trim(),
-
-      hostName: 'You',
-
-      // For now duration stores the optional end time.
-      duration: endTimeController.text.trim(),
-
-      ageRange:
-          '${ageRange.start.round()}–${ageRange.end.round()}',
-
-      capacity: participants,
-
-      tags: selectedTags.toList(),
+    EventData.addEvent(
+      ActivityEvent(
+        title: title.text.trim(),
+        date: date!,
+        location: location.text.trim(),
+        availableSpots: capacity,
+        imageUrl: image!.path,
+        time: startTime.text,
+        description: description.text.trim(),
+        hostName: 'You',
+        duration: '${startTime.text} – ${endTime.text}',
+        minAge: age.start.round(),
+        maxAge: age.end.round(),
+        capacity: capacity,
+        activity: activity,
+      ),
     );
-
-    EventData.addEvent(event);
 
     Navigator.pop(context);
   }

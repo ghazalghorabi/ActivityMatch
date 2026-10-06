@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'base_widgets.dart';
 import 'create_event_page.dart';
 import 'event_data.dart';
+import 'ticket_filter.dart';
 
 void main() {
   runApp(const ActivityMatchApp());
@@ -27,6 +28,10 @@ class ActivityMatchApp extends StatelessWidget {
   }
 }
 
+// ============================================================
+// TICKETS PAGE
+// ============================================================
+
 class TicketsPage extends StatefulWidget {
   const TicketsPage({super.key});
 
@@ -36,6 +41,7 @@ class TicketsPage extends StatefulWidget {
 
 class _TicketsPageState extends State<TicketsPage> {
   final searchController = TextEditingController();
+  final ticketFilter = TicketFilter();
 
   int selectedNavigationIndex = 1;
   String selectedTicketCategory = 'Liked';
@@ -59,7 +65,6 @@ class _TicketsPageState extends State<TicketsPage> {
     return Scaffold(
       backgroundColor: backgroundColor,
       extendBody: true,
-
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -72,20 +77,22 @@ class _TicketsPageState extends State<TicketsPage> {
 
                   SearchSection(
                     controller: searchController,
-                    onSearch: (text) {
-                      setState(() {});
-                    },
-                    onFilterPressed: () {
-                      openFilter(
-                        context,
-                        filterContent: _ticketFilter(),
-                      );
-                    },
+                    onSearch: (_) => setState(() {}),
+                    onFilterPressed: _openFilter,
                   ),
 
                   const SizedBox(height: 15),
+
                   _ticketCategorySelector(),
-                  const SizedBox(height: 25),
+
+                  const SizedBox(height: 10),
+
+                  ActiveTicketFilters(
+                    filter: ticketFilter,
+                    onChanged: () => setState(() {}),
+                  ),
+
+                  const SizedBox(height: 20),
 
                   _ticketContent(),
                 ]),
@@ -98,7 +105,6 @@ class _TicketsPageState extends State<TicketsPage> {
           ],
         ),
       ),
-
       bottomNavigationBar: BottomNavigation(
         selectedIndex: selectedNavigationIndex,
         onSelected: (index) {
@@ -106,9 +112,14 @@ class _TicketsPageState extends State<TicketsPage> {
             selectedNavigationIndex = index;
           });
         },
+        onAddPressed: _createEvent,
       ),
     );
   }
+
+  // ============================================================
+  // TITLE
+  // ============================================================
 
   Widget _pageTitle() {
     return const Center(
@@ -123,6 +134,10 @@ class _TicketsPageState extends State<TicketsPage> {
       ),
     );
   }
+
+  // ============================================================
+  // TICKET CATEGORIES
+  // ============================================================
 
   Widget _ticketCategorySelector() {
     return Container(
@@ -175,13 +190,17 @@ class _TicketsPageState extends State<TicketsPage> {
     );
   }
 
+  // ============================================================
+  // TICKET CONTENT
+  // ============================================================
+
   Widget _ticketContent() {
     if (selectedTicketCategory == 'Liked' && isLiked) {
       return EventCard(
         imageUrl:
             'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
         title: 'Beginner Padel Night',
-        date: 'Wed 15 Oct',
+        date: '15/10/2026',
         location: 'Padel Center',
         availableSpots: 2,
         showFavoriteButton: true,
@@ -200,7 +219,7 @@ class _TicketsPageState extends State<TicketsPage> {
         imageUrl:
             'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
         title: 'Beginner Padel Night',
-        date: 'Wed 15 Oct',
+        date: '15/10/2026',
         location: 'Padel Center',
         availableSpots: 0,
         queuePosition: 4,
@@ -209,33 +228,56 @@ class _TicketsPageState extends State<TicketsPage> {
     }
 
     if (selectedTicketCategory == 'Hosting') {
+      final events = applyTicketFilters(
+        EventData.hostedEvents,
+        ticketFilter,
+      );
+
+      if (events.isEmpty) {
+        return _emptyMessage('No hosted events');
+      }
+
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _hostingHeader(),
+          const Text(
+            'Your hosted events',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           const SizedBox(height: 15),
 
-          ...EventData.hostedEvents.map((event) {
-            return Padding(
+          ...events.map(
+            (event) => Padding(
               padding: const EdgeInsets.only(bottom: 15),
               child: EventCard(
                 imageUrl: event.imageUrl,
                 title: event.title,
-                date: event.date,
+                date: event.formattedDate,
                 location: event.location,
                 availableSpots: event.availableSpots,
                 onTap: () {},
               ),
-            );
-          }),
+            ),
+          ),
         ],
       );
     }
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 40),
+    return _emptyMessage(
+      'No $selectedTicketCategory events',
+    );
+  }
+
+  Widget _emptyMessage(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 40),
+      child: Center(
         child: Text(
-          'No $selectedTicketCategory events',
+          text,
           style: const TextStyle(
             color: Colors.white54,
             fontSize: 14,
@@ -245,38 +287,24 @@ class _TicketsPageState extends State<TicketsPage> {
     );
   }
 
-  Widget _hostingHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text(
-          'Your hosted events',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 17,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
+  // ============================================================
+  // FILTER
+  // ============================================================
 
-        GestureDetector(
-          onTap: _createEvent,
-          child: Container(
-            width: 42,
-            height: 42,
-            decoration: const BoxDecoration(
-              color: Color(0xFFFF9800),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.add_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-        ),
-      ],
+  Future<void> _openFilter() async {
+    final result = await showTicketFilter(
+      context,
+      ticketFilter,
     );
+
+    if (result != null) {
+      setState(() {});
+    }
   }
+
+  // ============================================================
+  // CREATE EVENT
+  // ============================================================
 
   Future<void> _createEvent() async {
     await Navigator.push(
@@ -287,59 +315,5 @@ class _TicketsPageState extends State<TicketsPage> {
     );
 
     setState(() {});
-  }
-
-  Widget _ticketFilter() {
-    return FilterBase(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Filter tickets',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          const SizedBox(height: 25),
-
-          const Text(
-            'Ticket filters will go here',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 15,
-            ),
-          ),
-
-          const SizedBox(height: 25),
-
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFF9800),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(26),
-                ),
-              ),
-              child: const Text(
-                'Apply filters',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

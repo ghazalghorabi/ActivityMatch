@@ -366,15 +366,16 @@ class EventCard extends StatelessWidget {
 // ============================================================
 // BOTTOM NAVIGATION
 // ============================================================
-
 class BottomNavigation extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final VoidCallback onAddPressed;
 
   const BottomNavigation({
     super.key,
     required this.selectedIndex,
     required this.onSelected,
+    required this.onAddPressed,
   });
 
   @override
@@ -401,32 +402,35 @@ class BottomNavigation extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _navigationButton(
-              Icons.home_rounded,
-              0,
+            _navigationButton(Icons.home_rounded, 0),
+            _navigationButton(Icons.local_activity_outlined, 1),
+
+            GestureDetector(
+              onTap: onAddPressed,
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFF9800),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.add_rounded,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
             ),
-            _navigationButton(
-              Icons.local_activity_outlined,
-              1,
-            ),
-            _navigationButton(
-              Icons.notifications_none_rounded,
-              2,
-            ),
-            _navigationButton(
-              Icons.person_outline_rounded,
-              3,
-            ),
+
+            _navigationButton(Icons.notifications_outlined, 2),
+            _navigationButton(Icons.person_outline_rounded, 3),
           ],
         ),
       ),
     );
   }
 
-  Widget _navigationButton(
-    IconData icon,
-    int index,
-  ) {
+  Widget _navigationButton(IconData icon, int index) {
     final selected = selectedIndex == index;
 
     return GestureDetector(
@@ -443,9 +447,7 @@ class BottomNavigation extends StatelessWidget {
         ),
         child: Icon(
           icon,
-          color: selected
-              ? Colors.black
-              : Colors.white70,
+          color: selected ? Colors.black : Colors.white70,
           size: 23,
         ),
       ),
