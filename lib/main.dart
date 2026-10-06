@@ -40,6 +40,10 @@ class _HomePageState extends State<HomePage> {
   String selectedCategory = 'All activities';
   int selectedNavigationIndex = 0;
 
+  String selectedCity = 'All cities';
+  double selectedDistance = 50;
+  bool availableOnly = false;
+
   final List<String> categories = [
     'All activities',
     'Sports',
@@ -58,6 +62,7 @@ class _HomePageState extends State<HomePage> {
       date: 'Wed 15 Oct',
       time: '18:00',
       location: 'Padel Center',
+      city: 'Gothenburg',
       distance: '2.3 km',
       availableSpots: 2,
       participantCount: 6,
@@ -79,6 +84,7 @@ class _HomePageState extends State<HomePage> {
       date: 'Fri 17 Oct',
       time: '20:00',
       location: 'City Centre',
+      city: 'Stockholm',
       distance: '1.1 km',
       availableSpots: 3,
       participantCount: 5,
@@ -100,6 +106,7 @@ class _HomePageState extends State<HomePage> {
       date: 'Sat 18 Oct',
       time: '10:00',
       location: 'Central Park',
+      city: 'Gothenburg',
       distance: '3.4 km',
       availableSpots: 8,
       participantCount: 4,
@@ -121,6 +128,37 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     searchController.dispose();
     super.dispose();
+  }
+
+  List<ActivityEvent> get filteredEvents {
+    return events.where((event) {
+      // CITY
+      final matchesCity =
+          selectedCity == 'All cities' || event.city == selectedCity;
+
+      // CATEGORY
+      final matchesCategory =
+          selectedCategory == 'All activities' ||
+          event.tags.contains(selectedCategory);
+
+      // AVAILABLE SPOTS
+      final matchesAvailability = !availableOnly || event.availableSpots > 0;
+
+      // SEARCH
+      final search = searchController.text.trim().toLowerCase();
+
+      final matchesSearch =
+          search.isEmpty ||
+          event.title.toLowerCase().contains(search) ||
+          event.location.toLowerCase().contains(search) ||
+          event.city.toLowerCase().contains(search) ||
+          event.tags.any((tag) => tag.toLowerCase().contains(search));
+
+      return matchesCity &&
+          matchesCategory &&
+          matchesAvailability &&
+          matchesSearch;
+    }).toList();
   }
 
   @override
@@ -206,12 +244,12 @@ class _HomePageState extends State<HomePage> {
                 child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   scrollDirection: Axis.horizontal,
-                  itemCount: events.length,
+                  itemCount: filteredEvents.length,
                   separatorBuilder: (context, index) {
                     return const SizedBox(width: 12);
                   },
                   itemBuilder: (context, index) {
-                    final event = events[index];
+                    final event = filteredEvents[index];
 
                     return EventCard(
                       event: event,
@@ -252,15 +290,27 @@ class _HomePageState extends State<HomePage> {
   // FILTER WINDOW
   // ============================================================
 
-  void openFilters() {
-    showModalBottomSheet(
+  Future<void> openFilters() async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) {
-        return const FilterSheet();
+        return FilterSheet(
+          initialCity: selectedCity,
+          initialDistance: selectedDistance,
+          initialAvailableOnly: availableOnly,
+        );
       },
     );
+
+    if (result != null) {
+      setState(() {
+        selectedCity = result['city'] as String;
+        selectedDistance = result['distance'] as double;
+        availableOnly = result['availableOnly'] as bool;
+      });
+    }
   }
 }
 
@@ -272,6 +322,7 @@ class ActivityEvent {
   final String title;
   final String date;
   final String location;
+  final String city;
   final int availableSpots;
   final String imageUrl;
 
@@ -289,6 +340,7 @@ class ActivityEvent {
     required this.title,
     required this.date,
     required this.location,
+    required this.city,
     required this.availableSpots,
     required this.imageUrl,
     this.time = '18:00',
@@ -911,18 +963,44 @@ class NavigationButton extends StatelessWidget {
 // ============================================================
 // FILTER BOTTOM SHEET
 // ============================================================
-
 class FilterSheet extends StatefulWidget {
-  const FilterSheet({super.key});
+  final String initialCity;
+  final double initialDistance;
+  final bool initialAvailableOnly;
+
+  const FilterSheet({
+    super.key,
+    required this.initialCity,
+    required this.initialDistance,
+    required this.initialAvailableOnly,
+  });
 
   @override
   State<FilterSheet> createState() => _FilterSheetState();
 }
 
 class _FilterSheetState extends State<FilterSheet> {
-  double distance = 10;
+  late String selectedCity;
+  late double distance;
+  late bool availableOnly;
 
-  bool availableOnly = true;
+  final List<String> cities = [
+    'All cities',
+    'Gothenburg',
+    'Stockholm',
+    'Malmö',
+    'Copenhagen',
+    'Oslo',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+
+    selectedCity = widget.initialCity;
+    distance = widget.initialDistance;
+    availableOnly = widget.initialAvailableOnly;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -938,7 +1016,7 @@ class _FilterSheetState extends State<FilterSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Drag handle
+            // DRAG HANDLE
             Center(
               child: Container(
                 width: 45,
@@ -952,6 +1030,7 @@ class _FilterSheetState extends State<FilterSheet> {
 
             const SizedBox(height: 20),
 
+            // TITLE
             const Text(
               'Filter events',
               style: TextStyle(
@@ -963,6 +1042,56 @@ class _FilterSheetState extends State<FilterSheet> {
 
             const SizedBox(height: 25),
 
+            // CITY
+            const Text(
+              'City',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2B2622),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedCity,
+                  isExpanded: true,
+                  dropdownColor: const Color(0xFF2B2622),
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: Colors.white70,
+                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  items: cities.map((city) {
+                    return DropdownMenuItem<String>(
+                      value: city,
+                      child: Text(city),
+                    );
+                  }).toList(),
+                  onChanged: (city) {
+                    if (city == null) return;
+
+                    setState(() {
+                      selectedCity = city;
+                    });
+                  },
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 25),
+
+            // DISTANCE
             Text(
               'Distance: ${distance.round()} km',
               style: const TextStyle(color: Colors.white, fontSize: 15),
@@ -981,6 +1110,7 @@ class _FilterSheetState extends State<FilterSheet> {
               },
             ),
 
+            // AVAILABLE SPOTS
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text(
@@ -998,12 +1128,17 @@ class _FilterSheetState extends State<FilterSheet> {
 
             const SizedBox(height: 20),
 
+            // APPLY
             SizedBox(
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context);
+                  Navigator.pop(context, {
+                    'city': selectedCity,
+                    'distance': distance,
+                    'availableOnly': availableOnly,
+                  });
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFF9800),
