@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'model.dart';
+import 'app_theme.dart';
 
 // ============================================================
 // TICKET FILTER
@@ -98,20 +99,19 @@ Future<TicketFilter?> showTicketFilter(
 
   return showModalBottomSheet<TicketFilter>(
     context: context,
-    backgroundColor: const Color(0xFF211D19),
+    backgroundColor: AppColors.surfaceSecondary,
     isScrollControlled: true,
     builder: (context) {
       return StatefulBuilder(
         builder: (context, setState) {
           Widget title(String text) => Padding(
-                padding: const EdgeInsets.only(top: 22, bottom: 8),
+                padding: const EdgeInsets.only(
+                  top: 22,
+                  bottom: AppSpacing.sm,
+                ),
                 child: Text(
                   text,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.formLabel,
                 ),
               );
 
@@ -121,14 +121,14 @@ Future<TicketFilter?> showTicketFilter(
             ValueChanged<String> onSelected,
           ) {
             return Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
               children: values.map((value) {
                 return ChoiceChip(
                   label: Text(value),
                   selected: selected == value,
                   showCheckmark: false,
-                  selectedColor: const Color(0xFFFF9800),
+                  selectedColor: AppColors.primary,
                   onSelected: (_) => setState(
                     () => onSelected(value),
                   ),
@@ -139,16 +139,13 @@ Future<TicketFilter?> showTicketFilter(
 
           return SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 35),
+              padding: AppSpacing.filter,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Filter tickets',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: AppTextStyles.filterTitle,
                   ),
 
                   title('When'),
@@ -201,8 +198,8 @@ Future<TicketFilter?> showTicketFilter(
 
                   title('Activity'),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
                     children: activities.map((activity) {
                       final selected =
                           filter.activities.contains(activity);
@@ -211,7 +208,7 @@ Future<TicketFilter?> showTicketFilter(
                         label: Text(activity),
                         selected: selected,
                         showCheckmark: false,
-                        selectedColor: const Color(0xFFFF9800),
+                        selectedColor: AppColors.primary,
                         onSelected: (_) {
                           setState(() {
                             selected
@@ -243,7 +240,7 @@ Future<TicketFilter?> showTicketFilter(
                     min: 18,
                     max: 70,
                     divisions: 52,
-                    activeColor: const Color(0xFFFF9800),
+                    activeColor: AppColors.primary,
                     onChanged: (value) {
                       setState(() => filter.age = value);
                     },
@@ -256,7 +253,7 @@ Future<TicketFilter?> showTicketFilter(
                     (value) => filter.sortBy = value,
                   ),
 
-                  const SizedBox(height: 30),
+                  const SizedBox(height: AppSpacing.xxxl),
 
                   Row(
                     children: [
@@ -278,15 +275,11 @@ Future<TicketFilter?> showTicketFilter(
                         ),
                       ),
 
-                      const SizedBox(width: 10),
+                      const SizedBox(width: AppSpacing.md),
 
                       Expanded(
                         child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                const Color(0xFFFF9800),
-                            foregroundColor: Colors.white,
-                          ),
+                          style: AppButtons.primary,
                           onPressed: () {
                             Navigator.pop(context, filter);
                           },
@@ -332,7 +325,12 @@ class ActiveTicketFilters extends StatelessWidget {
     }
 
     if (filter.distance != 'Any') {
-      filters.add(MapEntry('≤ ${filter.distance}', () => filter.distance = 'Any'));
+      filters.add(
+        MapEntry(
+          '≤ ${filter.distance}',
+          () => filter.distance = 'Any',
+        ),
+      );
     }
 
     if (filter.date != null) {
@@ -361,33 +359,30 @@ class ActiveTicketFilters extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 36,
+      height: AppSizes.activeFilterHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: filters.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 7),
+        separatorBuilder: (_, __) =>
+            const SizedBox(width: 7),
         itemBuilder: (context, index) {
           final item = filters[index];
 
           return Container(
-            padding: const EdgeInsets.only(left: 12, right: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFF292521),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.10),
-              ),
+            padding: const EdgeInsets.only(
+              left: 12,
+              right: AppSpacing.xs,
             ),
+            decoration: AppDecorations.filterChip,
             child: Row(
               children: [
                 Text(
                   item.key,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
+                  style: AppTextStyles.filterChip,
                 ),
-                const SizedBox(width: 3),
+
+                const SizedBox(width: AppSpacing.xxs),
+
                 IconButton(
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
@@ -397,7 +392,7 @@ class ActiveTicketFilters extends StatelessWidget {
                   icon: const Icon(
                     Icons.close,
                     size: 15,
-                    color: Colors.white54,
+                    color: AppColors.textMuted,
                   ),
                   onPressed: () {
                     item.value();

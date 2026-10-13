@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'base_widgets.dart';
 import 'event_data.dart';
 import 'model.dart';
+import 'app_theme.dart';
 
 // ============================================================
 // CREATE EVENT PAGE
@@ -53,13 +54,13 @@ class _CreateEventPageState extends State<CreateEventPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: backgroundColor,
+        backgroundColor: AppColors.background,
         title: const Text('Create Event'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: AppSpacing.page,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -68,13 +69,13 @@ class _CreateEventPageState extends State<CreateEventPage> {
             _field(title, 'Event name'),
             _label('Activity'),
             Wrap(
-              spacing: 8,
+              spacing: AppSpacing.sm,
               children: activities.map((a) {
                 return ChoiceChip(
                   label: Text(a),
                   selected: activity == a,
                   showCheckmark: false,
-                  selectedColor: const Color(0xFFFF9800),
+                  selectedColor: AppColors.primary,
                   onSelected: (_) => setState(() => activity = a),
                 );
               }).toList(),
@@ -97,7 +98,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
             Row(
               children: [
                 Expanded(child: _timeField(startTime, 'Start time')),
-                const SizedBox(width: 10),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(child: _timeField(endTime, 'End time')),
               ],
             ),
@@ -119,7 +120,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
                 ),
                 Text(
                   '$capacity people',
-                  style: const TextStyle(fontSize: 16),
+                  style: AppTextStyles.bodyLarge,
                 ),
                 IconButton(
                   onPressed: () => setState(() => capacity++),
@@ -136,19 +137,16 @@ class _CreateEventPageState extends State<CreateEventPage> {
               min: 18,
               max: 70,
               divisions: 52,
-              activeColor: const Color(0xFFFF9800),
+              activeColor: AppColors.primary,
               onChanged: (value) => setState(() => age = value),
             ),
-            const SizedBox(height: 25),
+            const SizedBox(height: AppSpacing.xxl),
             SizedBox(
               width: double.infinity,
-              height: 52,
+              height: AppSizes.primaryButtonHeight,
               child: ElevatedButton(
                 onPressed: _create,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF9800),
-                  foregroundColor: Colors.white,
-                ),
+                style: AppButtons.primary,
                 child: const Text('Create Event'),
               ),
             ),
@@ -170,20 +168,17 @@ class _CreateEventPageState extends State<CreateEventPage> {
           if (picked != null) setState(() => image = picked);
         },
         child: Container(
-          height: 180,
+          height: AppSizes.photoHeight,
           width: double.infinity,
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: const Color(0xFF292521),
-            borderRadius: BorderRadius.circular(18),
-          ),
+          decoration: AppDecorations.input,
           child: image != null
               ? Image.file(File(image!.path), fit: BoxFit.cover)
               : const Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.add_photo_alternate_outlined, size: 35),
-                    SizedBox(height: 8),
+                    SizedBox(height: AppSpacing.sm),
                     Text('Add photo *'),
                   ],
                 ),
@@ -195,13 +190,13 @@ class _CreateEventPageState extends State<CreateEventPage> {
   // ============================================================
 
   Widget _label(String text) => Padding(
-        padding: const EdgeInsets.only(top: 24, bottom: 8),
+        padding: const EdgeInsets.only(
+          top: AppSpacing.xxl,
+          bottom: AppSpacing.sm,
+        ),
         child: Text(
           '$text *',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          style: AppTextStyles.formLabel,
         ),
       );
 
@@ -214,23 +209,17 @@ class _CreateEventPageState extends State<CreateEventPage> {
       TextField(
         controller: controller,
         maxLines: lines,
-        decoration: InputDecoration(
-          hintText: hint,
-          prefixIcon: icon == null ? null : Icon(icon),
-          filled: true,
-          fillColor: const Color(0xFF292521),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide.none,
-          ),
+        decoration: AppInputs.field(
+          hint: hint,
+          icon: icon,
         ),
       );
 
   Widget _box(IconData icon, String text, VoidCallback tap) => ListTile(
         onTap: tap,
-        tileColor: const Color(0xFF292521),
+        tileColor: AppColors.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: AppRadii.field,
         ),
         leading: Icon(icon),
         title: Text(text),
@@ -266,15 +255,9 @@ class _CreateEventPageState extends State<CreateEventPage> {
           focusNode: focus,
           keyboardType: TextInputType.number,
           onChanged: (value) => controller.text = value,
-          decoration: InputDecoration(
-            hintText: hint,
-            prefixIcon: const Icon(Icons.access_time),
-            filled: true,
-            fillColor: const Color(0xFF292521),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide.none,
-            ),
+          decoration: AppInputs.field(
+            hint: hint,
+            icon: Icons.access_time,
           ),
         );
       },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_theme.dart';
 import 'base_widgets.dart';
 import 'create_event_page.dart';
 import 'event_data.dart';
@@ -17,12 +18,7 @@ class ActivityMatchApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'ActivityMatch',
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: backgroundColor,
-        fontFamily: 'Arial',
-      ),
+      theme: AppTheme.dark,
       home: const TicketsPage(),
     );
   }
@@ -63,17 +59,22 @@ class _TicketsPageState extends State<TicketsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: AppColors.background,
       extendBody: true,
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                AppSpacing.xl,
+                AppSpacing.xl,
+                0,
+              ),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   _pageTitle(),
-                  const SizedBox(height: 25),
+                  const SizedBox(height: AppSpacing.sectionGap),
 
                   SearchSection(
                     controller: searchController,
@@ -81,18 +82,18 @@ class _TicketsPageState extends State<TicketsPage> {
                     onFilterPressed: _openFilter,
                   ),
 
-                  const SizedBox(height: 15),
+                  const SizedBox(height: AppSpacing.lg),
 
                   _ticketCategorySelector(),
 
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.md),
 
                   ActiveTicketFilters(
                     filter: ticketFilter,
                     onChanged: () => setState(() {}),
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpacing.xl),
 
                   _ticketContent(),
                 ]),
@@ -125,12 +126,7 @@ class _TicketsPageState extends State<TicketsPage> {
     return const Center(
       child: Text(
         'Your Tickets',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 27,
-          fontWeight: FontWeight.w500,
-          letterSpacing: 0.3,
-        ),
+        style: AppTextStyles.pageTitle,
       ),
     );
   }
@@ -141,15 +137,9 @@ class _TicketsPageState extends State<TicketsPage> {
 
   Widget _ticketCategorySelector() {
     return Container(
-      height: 48,
+      height: AppSizes.categorySelectorHeight,
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF211D19),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.08),
-        ),
-      ),
+      decoration: AppDecorations.categorySelector,
       child: Row(
         children: ticketCategories.map((category) {
           final selected = category == selectedTicketCategory;
@@ -166,21 +156,15 @@ class _TicketsPageState extends State<TicketsPage> {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: selected
-                      ? const Color(0xFF554E47)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(25),
+                      ? AppColors.selectedTab
+                      : AppColors.transparent,
+                  borderRadius: AppRadii.tab,
                 ),
                 child: Text(
                   category,
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : Colors.white70,
-                    fontSize: 12,
-                    fontWeight: selected
-                        ? FontWeight.w600
-                        : FontWeight.w400,
-                  ),
+                  style: selected
+                      ? AppTextStyles.tabSelected
+                      : AppTextStyles.tabUnselected,
                 ),
               ),
             ),
@@ -242,17 +226,16 @@ class _TicketsPageState extends State<TicketsPage> {
         children: [
           const Text(
             'Your hosted events',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w500,
-            ),
+            style: AppTextStyles.sectionTitle,
           ),
-          const SizedBox(height: 15),
+
+          const SizedBox(height: AppSpacing.lg),
 
           ...events.map(
             (event) => Padding(
-              padding: const EdgeInsets.only(bottom: 15),
+              padding: const EdgeInsets.only(
+                bottom: AppSpacing.lg,
+              ),
               child: EventCard(
                 imageUrl: event.imageUrl,
                 title: event.title,
@@ -274,14 +257,13 @@ class _TicketsPageState extends State<TicketsPage> {
 
   Widget _emptyMessage(String text) {
     return Padding(
-      padding: const EdgeInsets.only(top: 40),
+      padding: const EdgeInsets.only(
+        top: AppSpacing.huge,
+      ),
       child: Center(
         child: Text(
           text,
-          style: const TextStyle(
-            color: Colors.white54,
-            fontSize: 14,
-          ),
+          style: AppTextStyles.emptyMessage,
         ),
       ),
     );

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'model.dart';
+import 'app_theme.dart';
 
-const Color backgroundColor = Color(0xFF100D0B);
-
+const Color backgroundColor = AppColors.background;
 
 // ============================================================
 // SEARCH
@@ -23,29 +23,23 @@ class SearchSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 55,
-      decoration: BoxDecoration(
-        color: const Color(0xFF292521),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.12),
-        ),
-      ),
+      height: AppSizes.searchHeight,
+      decoration: AppDecorations.search,
       child: Row(
         children: [
           const SizedBox(width: 7),
 
           Container(
-            width: 42,
-            height: 42,
+            width: AppSizes.searchIconSize,
+            height: AppSizes.searchIconSize,
             decoration: const BoxDecoration(
-              color: Color(0xFFFF9800),
+              color: AppColors.primary,
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.search_rounded,
-              color: Colors.white,
-              size: 23,
+              color: AppColors.textPrimary,
+              size: AppSizes.navigationIcon,
             ),
           ),
 
@@ -55,16 +49,10 @@ class SearchSection extends StatelessWidget {
             child: TextField(
               controller: controller,
               onChanged: onSearch,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-              ),
+              style: AppTextStyles.searchInput,
               decoration: const InputDecoration(
                 hintText: 'Search for events, venues, or more',
-                hintStyle: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 12,
-                ),
+                hintStyle: AppTextStyles.searchHint,
                 border: InputBorder.none,
                 isDense: true,
               ),
@@ -75,8 +63,8 @@ class SearchSection extends StatelessWidget {
             onPressed: onFilterPressed,
             icon: const Icon(
               Icons.tune_rounded,
-              color: Colors.white,
-              size: 23,
+              color: AppColors.textPrimary,
+              size: AppSizes.navigationIcon,
             ),
           ),
 
@@ -98,7 +86,7 @@ void openFilter(
 }) {
   showModalBottomSheet(
     context: context,
-    backgroundColor: Colors.transparent,
+    backgroundColor: AppColors.transparent,
     isScrollControlled: true,
     builder: (context) => filterContent,
   );
@@ -117,11 +105,9 @@ class FilterBase extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 30),
-      decoration: const BoxDecoration(
-        color: Color(0xFF201B18),
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(30),
-        ),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceDark,
+        borderRadius: AppRadii.bottomSheet,
       ),
       child: SafeArea(
         top: false,
@@ -131,16 +117,18 @@ class FilterBase extends StatelessWidget {
           children: [
             Center(
               child: Container(
-                width: 45,
-                height: 4,
+                width: AppSizes.bottomSheetHandleWidth,
+                height: AppSizes.bottomSheetHandleHeight,
                 decoration: BoxDecoration(
                   color: Colors.white24,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(
+                    AppRadii.small,
+                  ),
                 ),
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.xl),
 
             child,
           ],
@@ -181,7 +169,7 @@ class EventCard extends StatelessWidget {
     required this.availableSpots,
     required this.onTap,
     this.width,
-    this.height = 255,
+    this.height = AppSizes.eventCardHeight,
     this.showFavoriteButton = false,
     this.isLiked = false,
     this.onLikePressed,
@@ -196,7 +184,7 @@ class EventCard extends StatelessWidget {
         width: width,
         height: height,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppRadii.card,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -205,11 +193,11 @@ class EventCard extends StatelessWidget {
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) {
                   return Container(
-                    color: const Color(0xFF302824),
+                    color: AppColors.cardFallback,
                     child: const Center(
                       child: Icon(
                         Icons.image_not_supported_outlined,
-                        color: Colors.white30,
+                        color: AppColors.textDisabled,
                       ),
                     ),
                   );
@@ -217,16 +205,8 @@ class EventCard extends StatelessWidget {
               ),
 
               Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.15),
-                      Colors.black.withOpacity(0.9),
-                    ],
-                  ),
+                decoration: const BoxDecoration(
+                  gradient: AppDecorations.eventGradient,
                 ),
               ),
 
@@ -239,16 +219,12 @@ class EventCard extends StatelessWidget {
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.35),
-                    borderRadius: BorderRadius.circular(20),
+                    color: AppColors.overlayMedium,
+                    borderRadius: AppRadii.chip,
                   ),
                   child: Text(
                     date,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: AppTextStyles.eventDate,
                   ),
                 ),
               ),
@@ -260,15 +236,16 @@ class EventCard extends StatelessWidget {
                   child: IconButton(
                     onPressed: onLikePressed,
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withOpacity(0.25),
+                      backgroundColor:
+                          Colors.black.withOpacity(0.25),
                     ),
                     icon: Icon(
                       isLiked
                           ? Icons.favorite
                           : Icons.favorite_border,
                       color: isLiked
-                          ? const Color(0xFFFF9800)
-                          : Colors.white,
+                          ? AppColors.primary
+                          : AppColors.textPrimary,
                       size: 21,
                     ),
                   ),
@@ -285,46 +262,36 @@ class EventCard extends StatelessWidget {
                       title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: AppTextStyles.eventTitle,
                     ),
 
-                    const SizedBox(height: 5),
+                    const SizedBox(height: AppSpacing.xs),
 
                     Row(
                       children: [
                         const Icon(
                           Icons.location_on_outlined,
-                          color: Colors.white70,
+                          color: AppColors.textSecondary,
                           size: 14,
                         ),
 
-                        const SizedBox(width: 3),
+                        const SizedBox(width: AppSpacing.xxs),
 
                         Expanded(
                           child: Text(
                             location,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                            ),
+                            style: AppTextStyles.eventLocation,
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 5),
+                    const SizedBox(height: AppSpacing.xs),
 
                     Text(
                       '$availableSpots spots left',
-                      style: const TextStyle(
-                        color: Color(0xFFFFB13B),
-                        fontSize: 11,
-                      ),
+                      style: AppTextStyles.eventSpots,
                     ),
 
                     if (queuePosition != null) ...[
@@ -334,19 +301,15 @@ class EventCard extends StatelessWidget {
                         children: [
                           const Icon(
                             Icons.access_time_rounded,
-                            color: Colors.white70,
+                            color: AppColors.textSecondary,
                             size: 15,
                           ),
 
-                          const SizedBox(width: 5),
+                          const SizedBox(width: AppSpacing.xs),
 
                           Text(
                             'Queue position: $queuePosition',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
+                            style: AppTextStyles.eventQueue,
                           ),
                         ],
                       ),
@@ -366,6 +329,7 @@ class EventCard extends StatelessWidget {
 // ============================================================
 // BOTTOM NAVIGATION
 // ============================================================
+
 class BottomNavigation extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
@@ -381,49 +345,47 @@ class BottomNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(28, 0, 28, 15),
+      minimum: AppSpacing.bottomNavigation,
       child: Container(
-        height: 70,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xF22A211F),
-          borderRadius: BorderRadius.circular(40),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.10),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.35),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
+        height: AppSizes.navigationHeight,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
         ),
+        decoration: AppDecorations.navigation,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _navigationButton(Icons.home_rounded, 0),
-            _navigationButton(Icons.local_activity_outlined, 1),
+            _navigationButton(
+              Icons.local_activity_outlined,
+              1,
+            ),
 
             GestureDetector(
               onTap: onAddPressed,
               child: Container(
-                width: 50,
-                height: 50,
+                width: AppSizes.navigationButton,
+                height: AppSizes.navigationButton,
                 decoration: const BoxDecoration(
-                  color: Color(0xFFFF9800),
+                  color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.add_rounded,
-                  color: Colors.white,
-                  size: 30,
+                  color: AppColors.textPrimary,
+                  size: AppSizes.addIcon,
                 ),
               ),
             ),
 
-            _navigationButton(Icons.notifications_outlined, 2),
-            _navigationButton(Icons.person_outline_rounded, 3),
+            _navigationButton(
+              Icons.notifications_outlined,
+              2,
+            ),
+            _navigationButton(
+              Icons.person_outline_rounded,
+              3,
+            ),
           ],
         ),
       ),
@@ -437,18 +399,20 @@ class BottomNavigation extends StatelessWidget {
       onTap: () => onSelected(index),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        width: 50,
-        height: 50,
+        width: AppSizes.navigationButton,
+        height: AppSizes.navigationButton,
         decoration: BoxDecoration(
           color: selected
-              ? const Color.fromARGB(125, 255, 255, 255)
-              : Colors.transparent,
+              ? AppColors.selectedNavigation
+              : AppColors.transparent,
           shape: BoxShape.circle,
         ),
         child: Icon(
           icon,
-          color: selected ? Colors.black : Colors.white70,
-          size: 23,
+          color: selected
+              ? AppColors.textDark
+              : AppColors.textSecondary,
+          size: AppSizes.navigationIcon,
         ),
       ),
     );
