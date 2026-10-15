@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'app_theme.dart';
-import 'home_page.dart' show ActivityEvent;
+import 'model.dart';
+import 'event_data.dart';
 
 // ============================================================
 // EVENT DETAILS PAGE
@@ -13,8 +14,8 @@ class EventDetailsPage extends StatefulWidget {
   State<EventDetailsPage> createState() => _EventDetailsPageState();
 }
 class _EventDetailsPageState extends State<EventDetailsPage> {
-  bool isLiked = false;
-  bool hasJoined = false;
+  bool get isLiked => EventData.likedEvents.contains(widget.event.title);
+  bool get hasJoined => EventData.attendingEvents.contains(widget.event.title);
   @override
   Widget build(BuildContext context) {
     final event = widget.event;
@@ -148,7 +149,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
               icon: isLiked ? Icons.favorite : Icons.favorite_border,
               onPressed: () {
                 setState(() {
-                  isLiked = !isLiked;
+                  EventData.toggleLike(event);
                 });
               },
             ),
@@ -256,7 +257,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
             ),
             const SizedBox(width: 9),
             Text(
-              '${event.date} · ${event.time}',
+              '${event.formattedDate} · ${event.time}',
               style: AppTextStyles.bodySecondary,
             ),
           ],
@@ -445,7 +446,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
               child: ElevatedButton(
                 onPressed: () {
                   setState(() {
-                    hasJoined = !hasJoined;
+                    EventData.toggleJoin(event);
                   });
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(

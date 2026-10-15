@@ -4,6 +4,8 @@ import 'app_theme.dart';
 import 'base_widgets.dart';
 import 'create_event_page.dart';
 import 'event_data.dart';
+import 'model.dart';
+import 'activity_details_page.dart';
 import 'ticket_filter.dart';
 
 // ============================================================
@@ -23,7 +25,6 @@ class _TicketsPageState extends State<TicketsPage> {
 
   int selectedNavigationIndex = 1;
   String selectedTicketCategory = 'Liked';
-  bool isLiked = true;
 
   final ticketCategories = [
     'Liked',
@@ -166,22 +167,56 @@ class _TicketsPageState extends State<TicketsPage> {
   // ============================================================
 
   Widget _ticketContent() {
-    if (selectedTicketCategory == 'Liked' && isLiked) {
-      return EventCard(
-        imageUrl:
-            'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
-        title: 'Beginner Padel Night',
-        date: '15/10/2026',
-        location: 'Padel Center',
-        availableSpots: 2,
-        showFavoriteButton: true,
-        isLiked: true,
-        onLikePressed: () {
-          setState(() {
-            isLiked = false;
-          });
-        },
-        onTap: () {},
+    if (selectedTicketCategory == 'Liked') {
+      final events = EventData.events
+          .where((event) => EventData.likedEvents.contains(event.title))
+          .toList();
+      if (events.isEmpty) return _emptyMessage('No liked events');
+      return Column(
+        children: events.map((event) => Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+          child: EventCard(
+            imageUrl: event.imageUrl,
+            title: event.title,
+            date: event.formattedDate,
+            location: event.location,
+            availableSpots: event.availableSpots,
+            showFavoriteButton: true,
+            isLiked: true,
+            onLikePressed: () => setState(() => EventData.toggleLike(event)),
+            onTap: () async {
+              await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => EventDetailsPage(event: event),
+              ));
+              if (mounted) setState(() {});
+            },
+          ),
+        )).toList(),
+      );
+    }
+
+    if (selectedTicketCategory == 'Attending') {
+      final events = EventData.events
+          .where((event) => EventData.attendingEvents.contains(event.title))
+          .toList();
+      if (events.isEmpty) return _emptyMessage('No attending events');
+      return Column(
+        children: events.map((event) => Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+          child: EventCard(
+            imageUrl: event.imageUrl,
+            title: event.title,
+            date: event.formattedDate,
+            location: event.location,
+            availableSpots: event.availableSpots,
+            onTap: () async {
+              await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => EventDetailsPage(event: event),
+              ));
+              if (mounted) setState(() {});
+            },
+          ),
+        )).toList(),
       );
     }
 

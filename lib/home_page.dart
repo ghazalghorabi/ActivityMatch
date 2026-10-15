@@ -4,6 +4,8 @@ import 'base_widgets.dart';
 import 'create_event_page.dart';
 import 'tickets_page.dart';
 import 'activity_details_page.dart';
+import 'model.dart';
+import 'event_data.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -28,79 +30,13 @@ class _HomePageState extends State<HomePage> {
     'Wellness',
     'Other',
   ];
-  final Set<String> likedEvents = {};
-  final List<ActivityEvent> events = [
-    ActivityEvent(
-      title: 'Beginner Padel Night',
-      date: 'Wed 15 Oct',
-      time: '18:00',
-      location: 'Padel Center',
-      city: 'Gothenburg',
-      distance: '2.3 km',
-      availableSpots: 2,
-      participantCount: 6,
-      capacity: 8,
-      duration: '2h',
-      ageRange: '20–35',
-      hostName: 'Emma',
-      tags: ['Sports', 'Social', 'Beginner friendly'],
-      description:
-          'A relaxed padel session for beginners and intermediate players. '
-          'Meet new people, enjoy a fun game and afterwards we can grab a '
-          'drink together nearby!',
-      imageUrl:
-          'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
-    ),
-    ActivityEvent(
-      title: 'Friday Drinks',
-      date: 'Fri 17 Oct',
-      time: '20:00',
-      location: 'City Centre',
-      city: 'Stockholm',
-      distance: '1.1 km',
-      availableSpots: 3,
-      participantCount: 5,
-      capacity: 8,
-      duration: '3h',
-      ageRange: '22–35',
-      hostName: 'Lucas',
-      tags: ['Nightlife', 'Drinks', 'Social'],
-      description:
-          'Come meet some new people over drinks in the city. '
-          'A casual evening with no pressure — just good conversation '
-          'and a fun night out.',
-      imageUrl:
-          'https://images.unsplash.com/photo-1527529482837-4698179dc6ce?w=1200',
-    ),
-    ActivityEvent(
-      title: 'Morning Run',
-      date: 'Sat 18 Oct',
-      time: '10:00',
-      location: 'Central Park',
-      city: 'Gothenburg',
-      distance: '3.4 km',
-      availableSpots: 8,
-      participantCount: 4,
-      capacity: 12,
-      duration: '1h',
-      ageRange: '18–40',
-      hostName: 'Sara',
-      tags: ['Sports', 'Outdoor', 'Beginner friendly'],
-      description:
-          'Start the weekend with an easy social run. '
-          'All running levels are welcome and we will grab coffee '
-          'together afterwards.',
-      imageUrl:
-          'https://images.unsplash.com/photo-1552674605-db6ffd4facb5?w=1200',
-    ),
-  ];
   @override
   void dispose() {
     searchController.dispose();
     super.dispose();
   }
   List<ActivityEvent> get filteredEvents {
-    return events.where((event) {
+    return EventData.events.where((event) {
       final matchesCity =
           selectedCity == 'All cities' || event.city == selectedCity;
       final matchesCategory =
@@ -192,18 +128,20 @@ class _HomePageState extends State<HomePage> {
                        height: AppSizes.eventCardHeight,
                        imageUrl: event.imageUrl,
                        title: event.title,
-                       date: event.date,
+                       date: event.formattedDate,
                        location: event.location,
                        availableSpots: event.availableSpots,
                        showFavoriteButton: true,
-                       isLiked: likedEvents.contains(event.title),
+                       isLiked: EventData.likedEvents.contains(event.title),
                        onLikePressed: () => setState(() {
-                         if (!likedEvents.add(event.title)) likedEvents.remove(event.title);
+                         EventData.toggleLike(event);
                        }),
-                       onTap: () => Navigator.push(
-                         context,
-                         MaterialPageRoute(builder: (_) => EventDetailsPage(event: event)),
-                       ),
+                       onTap: () async {
+                         await Navigator.push(context, MaterialPageRoute(
+                           builder: (_) => EventDetailsPage(event: event),
+                         ));
+                         if (mounted) setState(() {});
+                       },
                      );
                   },
                 ),
@@ -215,11 +153,12 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: BottomNavigation(
         selectedIndex: selectedNavigationIndex,
-        onSelected: (index) {
+        onSelected: (index) async {
         if (index == 1) {
-          Navigator.of(context).push(
+          await Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const TicketsPage()),
           );
+          if (mounted) setState(() {});
         } else {
           setState(() => selectedNavigationIndex = index);
         }
@@ -254,41 +193,6 @@ class _HomePageState extends State<HomePage> {
       });
     }
   }
-}
-
-class ActivityEvent {
-  final String title;
-  final String date;
-  final String location;
-  final String city;
-  final int availableSpots;
-  final String imageUrl;
-  final String time;
-  final String distance;
-  final String description;
-  final String hostName;
-  final String duration;
-  final String ageRange;
-  final int participantCount;
-  final int capacity;
-  final List<String> tags;
-  const ActivityEvent({
-    required this.title,
-    required this.date,
-    required this.location,
-    required this.city,
-    required this.availableSpots,
-    required this.imageUrl,
-    this.time = '18:00',
-    this.distance = '2.3 km',
-    this.description = 'A relaxed activity for meeting new people. Come along, have fun and enjoy the activity together!',
-    this.hostName = 'Emma',
-    this.duration = '2h',
-    this.ageRange = '20–35',
-    this.participantCount = 6,
-    this.capacity = 8,
-    this.tags = const [],
-  });
 }
 
 class Header extends StatelessWidget {

@@ -1,6 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter/foundation.dart';
 
 import 'base_widgets.dart';
 import 'event_data.dart';
@@ -161,29 +161,46 @@ class _CreateEventPageState extends State<CreateEventPage> {
   // ============================================================
 
   Widget _photo() => GestureDetector(
-        onTap: () async {
-          final picked = await ImagePicker().pickImage(
-            source: ImageSource.gallery,
-          );
-          if (picked != null) setState(() => image = picked);
-        },
-        child: Container(
-          height: AppSizes.photoHeight,
-          width: double.infinity,
-          clipBehavior: Clip.antiAlias,
-          decoration: AppDecorations.input,
-          child: image != null
-              ? Image.file(File(image!.path), fit: BoxFit.cover)
-              : const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.add_photo_alternate_outlined, size: 35),
-                    SizedBox(height: AppSpacing.sm),
-                    Text('Add photo *'),
-                  ],
-                ),
-        ),
+    onTap: () async {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
       );
+
+      if (picked != null) {
+        setState(() => image = picked);
+      }
+    },
+    child: Container(
+      height: AppSizes.photoHeight,
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: AppDecorations.input,
+      child: image != null
+          ? FutureBuilder<Uint8List>(
+              future: image!.readAsBytes(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+
+                return Image.memory(
+                  snapshot.data!,
+                  fit: BoxFit.cover,
+                );
+              },
+            )
+          : const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add_photo_alternate_outlined, size: 35),
+                SizedBox(height: AppSpacing.sm),
+                Text('Add photo *'),
+              ],
+            ),
+    ),
+  );
 
   // ============================================================
   // FIELDS
