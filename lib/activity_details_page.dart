@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+
 import 'app_theme.dart';
 import 'model.dart';
 import 'event_data.dart';
+import 'auth_guard.dart';
 
 // ============================================================
 // EVENT DETAILS PAGE
@@ -13,6 +15,7 @@ class EventDetailsPage extends StatefulWidget {
   @override
   State<EventDetailsPage> createState() => _EventDetailsPageState();
 }
+
 class _EventDetailsPageState extends State<EventDetailsPage> {
   bool get isLiked => EventData.likedEvents.contains(widget.event.title);
   bool get hasJoined => EventData.attendingEvents.contains(widget.event.title);
@@ -90,6 +93,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
       ),
     );
   }
+
   // ==========================================================
   // HERO IMAGE
   // ==========================================================
@@ -147,7 +151,11 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
             right: 70,
             child: _CircleButton(
               icon: isLiked ? Icons.favorite : Icons.favorite_border,
-              onPressed: () {
+              onPressed: () async {
+                final loggedIn = await requireLogin(context);
+
+                if (!mounted || !loggedIn) return;
+
                 setState(() {
                   EventData.toggleLike(event);
                 });
@@ -173,6 +181,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
       ),
     );
   }
+
   // ==========================================================
   // PARTICIPANTS
   // ==========================================================
@@ -198,10 +207,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: AppColors.selectedTab,
-                    border: Border.all(
-                      color: AppColors.background,
-                      width: 2,
-                    ),
+                    border: Border.all(color: AppColors.background, width: 2),
                   ),
                   child: Text(
                     '+${event.participantCount > 4 ? event.participantCount - 4 : 0}',
@@ -220,6 +226,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
       ],
     );
   }
+
   Widget _participantCircle(double left, String letter, Color color) {
     return Positioned(
       left: left,
@@ -242,6 +249,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
       ),
     );
   }
+
   // ==========================================================
   // DATE + LOCATION
   // ==========================================================
@@ -282,6 +290,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
       ],
     );
   }
+
   // ==========================================================
   // TAGS
   // ==========================================================
@@ -297,14 +306,12 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
             borderRadius: AppRadii.chip,
             border: Border.all(color: AppColors.borderSubtle),
           ),
-          child: Text(
-            tag,
-            style: AppTextStyles.filterChip,
-          ),
+          child: Text(tag, style: AppTextStyles.filterChip),
         );
       }).toList(),
     );
   }
+
   // ==========================================================
   // HOST
   // ==========================================================
@@ -358,6 +365,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
       ],
     );
   }
+
   // ==========================================================
   // EVENT INFORMATION BOX
   // ==========================================================
@@ -398,9 +406,11 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
       ),
     );
   }
+
   Widget _divider() {
     return Container(width: 1, height: 45, color: AppColors.border);
   }
+
   // ==========================================================
   // BOTTOM BAR
   // ==========================================================
@@ -444,10 +454,15 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
             child: SizedBox(
               height: 58,
               child: ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
+                  final loggedIn = await requireLogin(context);
+
+                  if (!mounted || !loggedIn) return;
+
                   setState(() {
                     EventData.toggleJoin(event);
                   });
+
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
@@ -464,9 +479,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
                       ? AppColors.selectedTab
                       : AppColors.primary,
                   foregroundColor: AppColors.textPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: AppRadii.search,
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: AppRadii.search),
                 ),
                 child: Text(
                   hasJoined ? 'Joined ✓' : "I'm in",

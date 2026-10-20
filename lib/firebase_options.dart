@@ -23,15 +23,9 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for windows - '
@@ -65,5 +59,22 @@ class DefaultFirebaseOptions {
     messagingSenderId: '128434531634',
     projectId: 'activitymatch-8a5e7',
     storageBucket: 'activitymatch-8a5e7.firebasestorage.app',
+  );
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyC3Tlgp54ojDHHgnk3wD0NIzRGnCDbdUyw',
+    appId: '1:128434531634:ios:a435a82a61922da0cb7b2b',
+    messagingSenderId: '128434531634',
+    projectId: 'activitymatch-8a5e7',
+    storageBucket: 'activitymatch-8a5e7.firebasestorage.app',
+    iosBundleId: 'com.example.flutterApplicationTest1',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyC3Tlgp54ojDHHgnk3wD0NIzRGnCDbdUyw',
+    appId: '1:128434531634:ios:a435a82a61922da0cb7b2b',
+    messagingSenderId: '128434531634',
+    projectId: 'activitymatch-8a5e7',
+    storageBucket: 'activitymatch-8a5e7.firebasestorage.app',
+    iosBundleId: 'com.example.flutterApplicationTest1',
   );
 }

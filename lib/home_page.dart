@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'app_theme.dart';
 import 'base_widgets.dart';
 import 'create_event_page.dart';
@@ -7,11 +8,18 @@ import 'activity_details_page.dart';
 import 'model.dart';
 import 'event_data.dart';
 
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'login_page.dart';
+import 'auth_guard.dart';
+import 'profile_page.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
   State<HomePage> createState() => _HomePageState();
 }
+
 class _HomePageState extends State<HomePage> {
   final TextEditingController searchController = TextEditingController();
   String selectedCategory = 'All activities';
@@ -35,6 +43,7 @@ class _HomePageState extends State<HomePage> {
     searchController.dispose();
     super.dispose();
   }
+
   List<ActivityEvent> get filteredEvents {
     return EventData.events.where((event) {
       final matchesCity =
@@ -56,6 +65,7 @@ class _HomePageState extends State<HomePage> {
           matchesSearch;
     }).toList();
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,7 +75,12 @@ class _HomePageState extends State<HomePage> {
         child: CustomScrollView(
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, 0),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                AppSpacing.xl,
+                AppSpacing.xl,
+                0,
+              ),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   const Header(),
@@ -115,7 +130,9 @@ class _HomePageState extends State<HomePage> {
               child: SizedBox(
                 height: AppSizes.eventCardHeight,
                 child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xl,
+                  ),
                   scrollDirection: Axis.horizontal,
                   itemCount: filteredEvents.length,
                   separatorBuilder: (context, index) {
@@ -123,26 +140,34 @@ class _HomePageState extends State<HomePage> {
                   },
                   itemBuilder: (context, index) {
                     final event = filteredEvents[index];
-                     return EventCard(
-                       width: 180,
-                       height: AppSizes.eventCardHeight,
-                       imageUrl: event.imageUrl,
-                       title: event.title,
-                       date: event.formattedDate,
-                       location: event.location,
-                       availableSpots: event.availableSpots,
-                       showFavoriteButton: true,
-                       isLiked: EventData.likedEvents.contains(event.title),
-                       onLikePressed: () => setState(() {
-                         EventData.toggleLike(event);
-                       }),
-                       onTap: () async {
-                         await Navigator.push(context, MaterialPageRoute(
-                           builder: (_) => EventDetailsPage(event: event),
-                         ));
-                         if (mounted) setState(() {});
-                       },
-                     );
+                    return EventCard(
+                      width: 180,
+                      height: AppSizes.eventCardHeight,
+                      imageUrl: event.imageUrl,
+                      title: event.title,
+                      date: event.formattedDate,
+                      location: event.location,
+                      availableSpots: event.availableSpots,
+                      showFavoriteButton: true,
+                      isLiked: EventData.likedEvents.contains(event.title),
+                      onLikePressed: () async {
+                        final loggedIn = await requireLogin(context);
+                        if (!loggedIn || !mounted) return;
+
+                        setState(() {
+                          EventData.toggleLike(event);
+                        });
+                      },
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => EventDetailsPage(event: event),
+                          ),
+                        );
+                        if (mounted) setState(() {});
+                      },
+                    );
                   },
                 ),
               ),
@@ -153,25 +178,46 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: BottomNavigation(
         selectedIndex: selectedNavigationIndex,
+
         onSelected: (index) async {
-        if (index == 1) {
-          await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const TicketsPage()),
-          );
+          if (index == 1) {
+            // Tickets: login required
+            final loggedIn = await requireLogin(context);
+            if (!loggedIn || !mounted) return;
+
+            await Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const TicketsPage()));
+
+            if (mounted) setState(() {});
+          } else if (index == 3) {
+            // Profile: login required
+            final loggedIn = await requireLogin(context);
+            if (!loggedIn || !mounted) return;
+
+            await Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const ProfilePage()));
+
+            if (mounted) setState(() {});
+          } else {
+            setState(() {
+              selectedNavigationIndex = index;
+            });
+          }
+        },
+
+        onAddPressed: () async {
+          final loggedIn = await requireLogin(context);
+          if (!loggedIn || !mounted) return;
+
+          await Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const CreateEventPage()));
+
           if (mounted) setState(() {});
-        } else {
-          setState(() => selectedNavigationIndex = index);
-        }
-      },
-      onAddPressed: () async {
-        await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const CreateEventPage()),
-        );
-        if (mounted) setState(() {});
-      },
+        },
       ),
     );
   }
+
   Future<void> openFilters() async {
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -197,13 +243,50 @@ class _HomePageState extends State<HomePage> {
 
 class Header extends StatelessWidget {
   const Header({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'ActivityMatch',
-        style: AppTextStyles.pageTitle,
-      ),
+    return Column(
+      children: [
+        const Center(
+          child: Text('ActivityMatch', style: AppTextStyles.pageTitle),
+        ),
+        const SizedBox(height: 12),
+        StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            final user = snapshot.data;
+
+            if (user == null) {
+              return TextButton(
+                onPressed: () {
+                  Navigator.of(
+                    context,
+                  ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+                },
+                child: const Text('Log in / Sign up'),
+              );
+            }
+
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  user.displayName ?? user.email ?? 'My account',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: () async {
+                    await FirebaseAuth.instance.signOut();
+                  },
+                  child: const Text('Log out'),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -253,7 +336,9 @@ class CategorySelector extends StatelessWidget {
               ),
               child: Text(
                 category,
-                style: isSelected ? AppTextStyles.tabSelected : AppTextStyles.tabUnselected,
+                style: isSelected
+                    ? AppTextStyles.tabSelected
+                    : AppTextStyles.tabUnselected,
               ),
             ),
           );
@@ -275,18 +360,10 @@ class SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-          child: Text(
-            title,
-            style: AppTextStyles.sectionTitle,
-          ),
-        ),
+        Expanded(child: Text(title, style: AppTextStyles.sectionTitle)),
         TextButton(
           onPressed: onViewAll,
-          child: const Text(
-            'View All',
-            style: AppTextStyles.filterChip,
-          ),
+          child: const Text('View All', style: AppTextStyles.filterChip),
         ),
       ],
     );
@@ -315,7 +392,11 @@ class FeaturedEventCard extends StatelessWidget {
               return Container(
                 color: AppColors.cardFallback,
                 child: const Center(
-                  child: Icon(Icons.event, size: 60, color: AppColors.textDisabled),
+                  child: Icon(
+                    Icons.event,
+                    size: 60,
+                    color: AppColors.textDisabled,
+                  ),
                 ),
               );
             },
@@ -345,12 +426,18 @@ class FeaturedEventCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   'Where Every Night\nFinds Its Vibe',
-                  style: AppTextStyles.eventTitle.copyWith(fontSize: 21, height: 1.15),
+                  style: AppTextStyles.eventTitle.copyWith(
+                    fontSize: 21,
+                    height: 1.15,
+                  ),
                 ),
                 const SizedBox(height: 9),
                 Text(
                   'Find events, connect, and\nenjoy every night easily.',
-                  style: AppTextStyles.bodySecondary.copyWith(fontSize: 12, height: 1.4),
+                  style: AppTextStyles.bodySecondary.copyWith(
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
                 ),
                 const Spacer(),
                 SizedBox(
@@ -361,14 +448,18 @@ class FeaturedEventCard extends StatelessWidget {
                       backgroundColor: AppColors.textPrimary,
                       foregroundColor: AppColors.textDark,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xl,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: AppRadii.chip,
                       ),
                     ),
                     child: Text(
                       'Explore',
-                      style: AppTextStyles.tabSelected.copyWith(color: AppColors.textDark),
+                      style: AppTextStyles.tabSelected.copyWith(
+                        color: AppColors.textDark,
+                      ),
                     ),
                   ),
                 ),
@@ -394,6 +485,7 @@ class FilterSheet extends StatefulWidget {
   @override
   State<FilterSheet> createState() => _FilterSheetState();
 }
+
 class _FilterSheetState extends State<FilterSheet> {
   late String selectedCity;
   late double distance;
@@ -413,6 +505,7 @@ class _FilterSheetState extends State<FilterSheet> {
     distance = widget.initialDistance;
     availableOnly = widget.initialAvailableOnly;
   }
+
   @override
   Widget build(BuildContext context) {
     return FilterBase(
@@ -420,105 +513,97 @@ class _FilterSheetState extends State<FilterSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-            const Text(
-              'Filter events',
-              style: AppTextStyles.filterTitle,
+          const Text('Filter events', style: AppTextStyles.filterTitle),
+          const SizedBox(height: AppSpacing.xl),
+          const Text('City', style: AppTextStyles.formLabel),
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: AppRadii.field,
+              border: Border.all(color: AppColors.borderSubtle),
             ),
-            const SizedBox(height: AppSpacing.xl),
-            const Text(
-              'City',
-              style: AppTextStyles.formLabel,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: AppRadii.field,
-                border: Border.all(color: AppColors.borderSubtle),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: selectedCity,
-                  isExpanded: true,
-                  dropdownColor: AppColors.surface,
-                  icon: const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: AppColors.textSecondary,
-                  ),
-                  style: AppTextStyles.bodyLarge,
-                  items: cities.map((city) {
-                    return DropdownMenuItem<String>(
-                      value: city,
-                      child: Text(city),
-                    );
-                  }).toList(),
-                  onChanged: (city) {
-                    if (city == null) return;
-                    setState(() {
-                      selectedCity = city;
-                    });
-                  },
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: selectedCity,
+                isExpanded: true,
+                dropdownColor: AppColors.surface,
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: AppColors.textSecondary,
                 ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            Text(
-              'Distance: ${distance.round()} km',
-              style: AppTextStyles.bodyLarge,
-            ),
-            Slider(
-              value: distance,
-              min: 1,
-              max: 50,
-              divisions: 49,
-              activeColor: AppColors.primary,
-              onChanged: (value) {
-                setState(() {
-                  distance = value;
-                });
-              },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Only events with available spots',
                 style: AppTextStyles.bodyLarge,
-              ),
-              activeColor: AppColors.primary,
-              value: availableOnly,
-              onChanged: (value) {
-                setState(() {
-                  availableOnly = value;
-                });
-              },
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            SizedBox(
-              width: double.infinity,
-              height: AppSizes.primaryButtonHeight,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context, {
-                    'city': selectedCity,
-                    'distance': distance,
-                    'availableOnly': availableOnly,
+                items: cities.map((city) {
+                  return DropdownMenuItem<String>(
+                    value: city,
+                    child: Text(city),
+                  );
+                }).toList(),
+                onChanged: (city) {
+                  if (city == null) return;
+                  setState(() {
+                    selectedCity = city;
                   });
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.textPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: AppRadii.tab,
-                  ),
-                ),
-                child: const Text(
-                  'Apply filters',
-                  style: AppTextStyles.tabSelected,
-                ),
               ),
             ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Text(
+            'Distance: ${distance.round()} km',
+            style: AppTextStyles.bodyLarge,
+          ),
+          Slider(
+            value: distance,
+            min: 1,
+            max: 50,
+            divisions: 49,
+            activeColor: AppColors.primary,
+            onChanged: (value) {
+              setState(() {
+                distance = value;
+              });
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Only events with available spots',
+              style: AppTextStyles.bodyLarge,
+            ),
+            activeColor: AppColors.primary,
+            value: availableOnly,
+            onChanged: (value) {
+              setState(() {
+                availableOnly = value;
+              });
+            },
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          SizedBox(
+            width: double.infinity,
+            height: AppSizes.primaryButtonHeight,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context, {
+                  'city': selectedCity,
+                  'distance': distance,
+                  'availableOnly': availableOnly,
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.textPrimary,
+                shape: RoundedRectangleBorder(borderRadius: AppRadii.tab),
+              ),
+              child: const Text(
+                'Apply filters',
+                style: AppTextStyles.tabSelected,
+              ),
+            ),
+          ),
         ],
       ),
     );
