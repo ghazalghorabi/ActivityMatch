@@ -1,269 +1,237 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import 'app_bottom_navigation.dart';
+import 'home_page.dart';
+import 'tickets_page.dart';
+import 'profile_page.dart';
+import 'auth_guard.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
-
 
   static const Color backgroundColor = Color(0xFF120B06);
   static const Color cardColor = Color(0xFF211A15);
   static const Color orangeColor = Color(0xFFFFA33A);
 
-
   @override
   State<NotificationsPage> createState() => _NotificationsPageState();
 }
 
-
 class _NotificationsPageState extends State<NotificationsPage> {
-  final List<bool> unreadNotifications = [
-    true,
-    true,
-    true,
-    false,
-    false,
-    false,
-    false,
-  ];
+  bool _markingAll = false;
 
+  CollectionReference<Map<String, dynamic>> _notifications(String uid) =>
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('notifications');
 
-  void markAsRead(int index) {
-    setState(() {
-      unreadNotifications[index] = false;
-    });
+  Future<void> _markAsRead(String uid, String notificationId) async {
+    try {
+      await _notifications(uid).doc(notificationId).update({'read': true});
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not mark notification as read: $error')),
+      );
+    }
   }
 
+  Future<void> _markAllAsRead(
+    String uid,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
+    if (_markingAll) return;
+    final unread = docs.where((doc) => doc.data()['read'] != true).toList();
+    if (unread.isEmpty) return;
 
-  void markAllAsRead() {
-    setState(() {
-      for (int i = 0; i < unreadNotifications.length; i++) {
-        unreadNotifications[i] = false;
+    setState(() => _markingAll = true);
+    try {
+      // Firestore batches are limited in size. Keep batches small.
+      for (var start = 0; start < unread.length; start += 400) {
+        final batch = FirebaseFirestore.instance.batch();
+        final end = (start + 400 < unread.length) ? start + 400 : unread.length;
+        for (final doc in unread.sublist(start, end)) {
+          batch.update(_notifications(uid).doc(doc.id), {'read': true});
+        }
+        await batch.commit();
       }
-    });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not mark all as read: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _markingAll = false);
+    }
   }
 
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'event_joined':
+        return Icons.group_outlined;
+      case 'event_cancelled':
+        return Icons.event_busy_outlined;
+      case 'event_reminder':
+        return Icons.event_available_outlined;
+      default:
+        return Icons.notifications_none;
+    }
+  }
+
+  String _timeLabel(dynamic value) {
+    if (value is! Timestamp) return 'Just now';
+    final date = value.toDate().toLocal();
+    final elapsed = DateTime.now().difference(date);
+    if (elapsed.isNegative || elapsed.inMinutes < 1) return 'Just now';
+    if (elapsed.inMinutes < 60) return '${elapsed.inMinutes} min ago';
+    if (elapsed.inHours < 24) return '${elapsed.inHours} hours ago';
+    if (elapsed.inDays < 7) return '${elapsed.inDays} days ago';
+    return '${date.day}/${date.month}/${date.year}';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       backgroundColor: NotificationsPage.backgroundColor,
-
-
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 24,
-            vertical: 20,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // TITLE
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Notifications',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+        child: user == null
+            ? const Center(
+                child: Text(
+                  'Log in to see your notifications.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              )
+            : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _notifications(user.uid)
+                    .orderBy('createdAt', descending: true)
+                    .limit(100)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? [];
+                  final unreadCount = docs
+                      .where((doc) => doc.data()['read'] != true)
+                      .length;
 
-
-                  TextButton(
-                    onPressed: markAllAsRead,
-                    style: TextButton.styleFrom(
-                      backgroundColor: NotificationsPage.cardColor,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text(
-                      'Mark all as read',
-                      style: TextStyle(
-                        fontSize: 12,
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Notifications',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: unreadCount == 0 || _markingAll
+                                  ? null
+                                  : () => _markAllAsRead(user.uid, docs),
+                              style: TextButton.styleFrom(
+                                backgroundColor: NotificationsPage.cardColor,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: Text(
+                                _markingAll
+                                    ? 'Updating...'
+                                    : 'Mark all as read',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-
-
-              const SizedBox(height: 24),
-
-
-              // TODAY
-              const Text(
-                'Today',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-
-
-              const SizedBox(height: 12),
-
-
-              NotificationCard(
-                icon: Icons.group_outlined,
-                title: 'New participant joined',
-                message: 'Emma joined Padel Night',
-                time: '5 min ago',
-                unread: unreadNotifications[0],
-                onTap: () {
-                  markAsRead(0);
+                      Expanded(
+                        child: snapshot.hasError
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    'Could not load notifications:\n${snapshot.error}',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : !snapshot.hasData
+                            ? const Center(child: CircularProgressIndicator())
+                            : docs.isEmpty
+                            ? const Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.notifications_none,
+                                      color: NotificationsPage.orangeColor,
+                                      size: 52,
+                                    ),
+                                    SizedBox(height: 12),
+                                    Text(
+                                      'No notifications yet',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    SizedBox(height: 6),
+                                    Text(
+                                      'Updates about your activities will appear here.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: Colors.white70),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  24,
+                                  8,
+                                  24,
+                                  24,
+                                ),
+                                itemCount: docs.length,
+                                itemBuilder: (context, index) {
+                                  final doc = docs[index];
+                                  final data = doc.data();
+                                  return NotificationCard(
+                                    icon: _iconForType(
+                                      data['type'] as String? ?? '',
+                                    ),
+                                    title:
+                                        data['title'] as String? ??
+                                        'Activity update',
+                                    message: data['message'] as String? ?? '',
+                                    time: _timeLabel(data['createdAt']),
+                                    unread: data['read'] != true,
+                                    onTap: () => _markAsRead(user.uid, doc.id),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  );
                 },
               ),
-
-
-              NotificationCard(
-                icon: Icons.chat_bubble_outline,
-                title: 'New message',
-                message: 'You have a new message in Padel Night',
-                time: '20 min ago',
-                unread: unreadNotifications[1],
-                onTap: () {
-                  markAsRead(1);
-                },
-              ),
-
-
-              NotificationCard(
-                icon: Icons.event_available_outlined,
-                title: 'Hiking Trip is starting soon',
-                message: 'Remember to bring what you need',
-                time: '1 hour ago',
-                unread: unreadNotifications[2],
-                onTap: () {
-                  markAsRead(2);
-                },
-              ),
-
-
-              const SizedBox(height: 20),
-
-
-              // THIS WEEK
-              const Text(
-                'This week',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-
-
-              const SizedBox(height: 12),
-
-
-              NotificationCard(
-                icon: Icons.favorite_outline,
-                title: 'You might like this activity',
-                message: 'A new activity matches your interests',
-                time: 'Yesterday',
-                unread: unreadNotifications[3],
-                onTap: () {
-                  markAsRead(3);
-                },
-              ),
-
-
-              NotificationCard(
-                icon: Icons.schedule,
-                title: 'Event reminder',
-                message: 'Your event starts tomorrow',
-                time: '2 days ago',
-                unread: unreadNotifications[4],
-                onTap: () {
-                  markAsRead(4);
-                },
-              ),
-
-
-              NotificationCard(
-                icon: Icons.people_outline,
-                title: '2 new people joined',
-                message: 'Your event has new participants',
-                time: '3 days ago',
-                unread: unreadNotifications[5],
-                onTap: () {
-                  markAsRead(5);
-                },
-              ),
-
-
-              const SizedBox(height: 20),
-
-
-              // EARLIER
-              const Text(
-                'Earlier',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-
-
-              const SizedBox(height: 12),
-
-
-              NotificationCard(
-                icon: Icons.star_outline,
-                title: 'New events near you',
-                message: 'See new activities around Lund',
-                time: '1 week ago',
-                unread: unreadNotifications[6],
-                onTap: () {
-                  markAsRead(6);
-                },
-              ),
-            ],
-          ),
-        ),
       ),
 
-
-      // BOTTOM NAVIGATION
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF1A130E),
-        indicatorColor: const Color(0xFF573313),
-        selectedIndex: 2,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.confirmation_number_outlined),
-            selectedIcon: Icon(Icons.confirmation_number),
-            label: 'Tickets',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.notifications_none),
-            selectedIcon: Icon(Icons.notifications),
-            label: 'Notifications',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-      ),
+      bottomNavigationBar: const AppBottomNavigation(selectedIndex: 2),
     );
   }
 }
 
-
-
-
-// WIDGET FOR EACH NOTIFICATION
 class NotificationCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -271,7 +239,6 @@ class NotificationCard extends StatelessWidget {
   final String time;
   final bool unread;
   final VoidCallback onTap;
-
 
   const NotificationCard({
     super.key,
@@ -282,7 +249,6 @@ class NotificationCard extends StatelessWidget {
     required this.onTap,
     this.unread = false,
   });
-
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +264,6 @@ class NotificationCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // ICON
             Container(
               width: 48,
               height: 48,
@@ -306,18 +271,9 @@ class NotificationCard extends StatelessWidget {
                 color: NotificationsPage.backgroundColor,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                icon,
-                color: NotificationsPage.orangeColor,
-                size: 25,
-              ),
+              child: Icon(icon, color: NotificationsPage.orangeColor, size: 25),
             ),
-
-
             const SizedBox(width: 14),
-
-
-            // TEXT
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,41 +283,22 @@ class NotificationCard extends StatelessWidget {
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 14,
-                      fontWeight:
-                      unread ? FontWeight.bold : FontWeight.w600,
+                      fontWeight: unread ? FontWeight.bold : FontWeight.w600,
                     ),
                   ),
-
-
                   const SizedBox(height: 3),
-
-
                   Text(
                     message,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
                   ),
-
-
                   const SizedBox(height: 5),
-
-
                   Text(
                     time,
-                    style: const TextStyle(
-                      color: Colors.white38,
-                      fontSize: 11,
-                    ),
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                 ],
               ),
             ),
-
-
-
-
             if (unread)
               const Padding(
                 padding: EdgeInsets.only(left: 8),
@@ -376,5 +313,3 @@ class NotificationCard extends StatelessWidget {
     );
   }
 }
-
-

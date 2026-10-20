@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'looking_for_page.dart';
 
 class InterestsPage extends StatefulWidget {
@@ -60,10 +61,7 @@ class _InterestsPageState extends State<InterestsPage> {
 
               const Text(
                 'Choose the interests that describe you.',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 15,
-                ),
+                style: TextStyle(color: Colors.white70, fontSize: 15),
               ),
 
               const SizedBox(height: 30),
@@ -72,8 +70,7 @@ class _InterestsPageState extends State<InterestsPage> {
                 spacing: 10,
                 runSpacing: 10,
                 children: interests.map((interest) {
-                  final bool selected =
-                  selectedInterests.contains(interest);
+                  final bool selected = selectedInterests.contains(interest);
 
                   return FilterChip(
                     label: Text(interest),
@@ -83,9 +80,7 @@ class _InterestsPageState extends State<InterestsPage> {
                     selectedColor: orangeColor,
                     side: BorderSide.none,
                     labelStyle: TextStyle(
-                      color: selected
-                          ? Colors.black
-                          : Colors.white,
+                      color: selected ? Colors.black : Colors.white,
                       fontWeight: selected
                           ? FontWeight.bold
                           : FontWeight.normal,
@@ -112,14 +107,13 @@ class _InterestsPageState extends State<InterestsPage> {
                   onPressed: selectedInterests.isEmpty
                       ? null
                       : () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                        const LookingForPage(),
-                      ),
-                    );
-                  },
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const LookingForPage(),
+                            ),
+                          );
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: orangeColor,
                     foregroundColor: Colors.black,
@@ -131,10 +125,7 @@ class _InterestsPageState extends State<InterestsPage> {
                   ),
                   child: const Text(
                     'Continue',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),

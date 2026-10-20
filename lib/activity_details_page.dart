@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'app_theme.dart';
 import 'model.dart';
-import 'event_data.dart';
 import 'auth_guard.dart';
+import 'edit_event_page.dart';
 
 // ============================================================
 // EVENT DETAILS PAGE
@@ -17,77 +19,597 @@ class EventDetailsPage extends StatefulWidget {
 }
 
 class _EventDetailsPageState extends State<EventDetailsPage> {
-  bool get isLiked => EventData.likedEvents.contains(widget.event.title);
-  bool get hasJoined => EventData.attendingEvents.contains(widget.event.title);
+  bool isJoining = false;
+  bool isUpdatingLike = false;
+  Future<void> joinEvent() async {
+    if (isJoining) return;
+
+    final loggedIn = await requireLogin(context);
+    if (!mounted || !loggedIn) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final eventId = widget.event.id;
+
+    if (eventId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This event cannot be joined yet.')),
+      );
+      return;
+    }
+
+    setState(() => isJoining = true);
+
+    final firestore = FirebaseFirestore.instance;
+    final eventRef = firestore.collection('events').doc(eventId);
+    final attendeeRef = eventRef.collection('attendees').doc(user.uid);
+
+    // Read the signed-in user's own profile before starting the transaction.
+    String displayName = user.displayName?.trim() ?? '';
+    try {
+      final profile = await firestore.collection('users').doc(user.uid).get();
+      final savedName = profile.data()?['name'];
+      if (savedName is String && savedName.trim().isNotEmpty) {
+        displayName = savedName.trim();
+      }
+    } catch (_) {
+      // Firebase Auth display name is an acceptable fallback.
+    }
+    if (displayName.isEmpty) displayName = 'Attendee';
+
+    try {
+      await firestore.runTransaction((transaction) async {
+        final eventSnapshot = await transaction.get(eventRef);
+        final attendeeSnapshot = await transaction.get(attendeeRef);
+
+        if (!eventSnapshot.exists) {
+          throw Exception('This event no longer exists.');
+        }
+
+        if (attendeeSnapshot.exists) {
+          throw Exception('You have already joined this event.');
+        }
+
+        final data = eventSnapshot.data()!;
+        if ((data['status'] ?? 'active') != 'active') {
+          throw Exception('This event has been cancelled.');
+        }
+        final availableSpots = (data['availableSpots'] as num).toInt();
+        final participantCount = (data['participantCount'] as num).toInt();
+
+        if (availableSpots <= 0) {
+          throw Exception('This event is full.');
+        }
+
+        if (data['hostId'] == user.uid) {
+          throw Exception('You cannot join your own event.');
+        }
+
+        transaction.set(attendeeRef, {
+          'userId': user.uid,
+          'displayName': displayName,
+          'joinedAt': FieldValue.serverTimestamp(),
+        });
+
+        transaction.update(eventRef, {
+          'availableSpots': availableSpots - 1,
+          'participantCount': participantCount + 1,
+        });
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('You joined the event!')));
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not join: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => isJoining = false);
+      }
+    }
+  }
+
+  Future<void> leaveEvent() async {
+    if (isJoining) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || widget.event.id.isEmpty) return;
+
+    setState(() => isJoining = true);
+
+    final firestore = FirebaseFirestore.instance;
+    final eventRef = firestore.collection('events').doc(widget.event.id);
+    final attendeeRef = eventRef.collection('attendees').doc(user.uid);
+
+    try {
+      await firestore.runTransaction((transaction) async {
+        final eventSnapshot = await transaction.get(eventRef);
+        final attendeeSnapshot = await transaction.get(attendeeRef);
+
+        if (!eventSnapshot.exists) {
+          throw Exception('This event no longer exists.');
+        }
+
+        if (!attendeeSnapshot.exists) {
+          throw Exception('You are not attending this event.');
+        }
+
+        final data = eventSnapshot.data()!;
+        final capacity = (data['capacity'] as num).toInt();
+        final participantCount = (data['participantCount'] as num).toInt();
+        final availableSpots = (data['availableSpots'] as num).toInt();
+
+        if (participantCount <= 0 || availableSpots >= capacity) {
+          throw Exception('The event attendance data is invalid.');
+        }
+
+        transaction.delete(attendeeRef);
+
+        transaction.update(eventRef, {
+          'participantCount': participantCount - 1,
+          'availableSpots': availableSpots + 1,
+        });
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('You have left the event.')));
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not leave event: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => isJoining = false);
+      }
+    }
+  }
+
+  Future<void> toggleLike() async {
+    if (isUpdatingLike) return;
+
+    final loggedIn = await requireLogin(context);
+    if (!mounted || !loggedIn) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final eventId = widget.event.id;
+
+    if (eventId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This event cannot be saved yet.')),
+      );
+      return;
+    }
+
+    setState(() => isUpdatingLike = true);
+
+    final likeRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('likedEvents')
+        .doc(eventId);
+
+    try {
+      final likeSnapshot = await likeRef.get();
+
+      if (likeSnapshot.exists) {
+        await likeRef.delete();
+      } else {
+        await likeRef.set({'likedAt': FieldValue.serverTimestamp()});
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not update like: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => isUpdatingLike = false);
+      }
+    }
+  }
+
+  bool isCancelling = false;
+
+  Future<void> editEvent() async {
+    if (widget.event.id.isEmpty) return;
+
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditEventPage(eventId: widget.event.id),
+      ),
+    );
+  }
+
+  Future<void> cancelEvent() async {
+    if (isCancelling || widget.event.id.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel event?'),
+        content: const Text(
+          'This event will be marked as cancelled. '
+          'People will no longer be able to join it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep event'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Cancel event'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || confirmed != true) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() => isCancelling = true);
+
+    try {
+      final eventRef = FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.event.id);
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(eventRef);
+
+        if (!snapshot.exists) {
+          throw Exception('Event not found.');
+        }
+
+        final data = snapshot.data()!;
+
+        if (data['hostId'] != user.uid) {
+          throw Exception('Only the host can cancel this event.');
+        }
+
+        if ((data['status'] ?? 'active') != 'active') {
+          throw Exception('This event is already cancelled.');
+        }
+
+        transaction.update(eventRef, {'status': 'cancelled'});
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Event cancelled.')));
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not cancel event: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => isCancelling = false);
+      }
+    }
+  }
+
+  Widget _buildHostActions(ActivityEvent event) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null || event.id.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(event.id)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+
+        if (data == null || data['hostId'] != user.uid) {
+          return const SizedBox.shrink();
+        }
+
+        final cancelled = data['status'] == 'cancelled';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 24),
+            const Text(
+              'Manage your event',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 19,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (cancelled)
+              const Text(
+                'This event has been cancelled.',
+                style: TextStyle(color: AppColors.textSecondary),
+              )
+            else ...[
+              ElevatedButton.icon(
+                onPressed: editEvent,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Edit Event'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: isCancelling ? null : cancelEvent,
+                icon: const Icon(Icons.event_busy_outlined),
+                label: Text(isCancelling ? 'Cancelling...' : 'Cancel Event'),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final event = widget.event;
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          // --------------------------------------------------
-          // SCROLLABLE PAGE
-          // --------------------------------------------------
-          CustomScrollView(
-            slivers: [
-              // HERO IMAGE
-              SliverToBoxAdapter(child: _buildHero(event)),
-              // EVENT INFORMATION
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 130),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    _buildParticipants(event),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      event.title,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        height: 1.1,
-                      ),
+    final original = widget.event;
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: original.id.isEmpty
+          ? null
+          : FirebaseFirestore.instance
+                .collection('events')
+                .doc(original.id)
+                .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Scaffold(
+            body: Center(child: Text('Could not load event.')),
+          );
+        }
+        if (original.id.isNotEmpty && !snapshot.hasData) {
+          return Scaffold(
+            backgroundColor: AppColors.background,
+            body: Center(
+              child: snapshot.connectionState == ConnectionState.waiting
+                  ? const CircularProgressIndicator()
+                  : const Text('Event not found.'),
+            ),
+          );
+        }
+        final data = snapshot.data?.data();
+        if (original.id.isNotEmpty && data == null) {
+          return const Scaffold(body: Center(child: Text('Event not found.')));
+        }
+        final title = data?['title'] as String? ?? original.title;
+        final description =
+            data?['description'] as String? ?? original.description;
+        final location = data?['location'] as String? ?? original.location;
+        final time = data?['time'] as String? ?? original.time;
+        final date = (data?['date'] as Timestamp?)?.toDate() ?? original.date;
+        final duration = data?['duration'] as String? ?? original.duration;
+        final tags =
+            (data?['tags'] as List?)?.whereType<String>().toList() ??
+            original.tags;
+        final minAge = (data?['minAge'] as num?)?.toInt();
+        final maxAge = (data?['maxAge'] as num?)?.toInt();
+        final ageRange = minAge == null || maxAge == null
+            ? original.ageRange
+            : '$minAge–${maxAge == 70 ? '70+' : maxAge} years';
+        final cancelled = data?['status'] == 'cancelled';
+        final participantCount =
+            (data?['participantCount'] as num?)?.toInt() ??
+            original.participantCount;
+        final capacity =
+            (data?['capacity'] as num?)?.toInt() ?? original.capacity;
+        final user = FirebaseAuth.instance.currentUser;
+        final isHost = user != null && data?['hostId'] == user.uid;
+
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          body: Stack(
+            children: [
+              CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(child: _buildHero(original)),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 130),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        _buildParticipants(original),
+                        const SizedBox(height: AppSpacing.lg),
+                        if (cancelled) ...[
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceSecondary,
+                              borderRadius: AppRadii.field,
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(
+                                  Icons.event_busy_outlined,
+                                  color: AppColors.primary,
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'This event has been cancelled.',
+                                    style: TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                        ],
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        _buildLiveDateAndLocation(date, time, location),
+                        const SizedBox(height: AppSpacing.xl),
+                        _buildLiveTags(tags),
+                        const SizedBox(height: AppSpacing.huge),
+                        const Text(
+                          'About this event',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          description,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 15,
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xxxl),
+                        _buildHost(original),
+                        const SizedBox(height: AppSpacing.xl),
+                        _buildLiveInformationBox(
+                          participantCount,
+                          capacity,
+                          duration,
+                          ageRange,
+                        ),
+                        if (isHost) _buildHostActions(original),
+                      ]),
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-                    _buildDateAndLocation(event),
-                    const SizedBox(height: AppSpacing.xl),
-                    _buildTags(event),
-                    const SizedBox(height: AppSpacing.huge),
-                    const Text(
-                      'About this event',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      event.description,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
-                    _buildHost(event),
-                    const SizedBox(height: AppSpacing.xl),
-                    _buildInformationBox(event),
-                  ]),
-                ),
+                  ),
+                ],
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _buildBottomBar(original),
               ),
             ],
           ),
-          // --------------------------------------------------
-          // BOTTOM JOIN BAR
-          // --------------------------------------------------
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _buildBottomBar(event),
+        );
+      },
+    );
+  }
+
+  Widget _buildLiveDateAndLocation(
+    DateTime date,
+    String time,
+    String location,
+  ) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.calendar_month_outlined,
+              color: AppColors.textSecondary,
+              size: 21,
+            ),
+            const SizedBox(width: 9),
+            Text(
+              '${date.day}/${date.month}/${date.year} · $time',
+              style: AppTextStyles.bodySecondary,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            const Icon(
+              Icons.location_on_outlined,
+              color: AppColors.textSecondary,
+              size: 21,
+            ),
+            const SizedBox(width: 9),
+            Expanded(child: Text(location, style: AppTextStyles.bodySecondary)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLiveTags(List<String> tags) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: tags
+          .map(
+            (tag) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: AppRadii.chip,
+                border: Border.all(color: AppColors.borderSubtle),
+              ),
+              child: Text(tag, style: AppTextStyles.filterChip),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Widget _buildLiveInformationBox(
+    int participantCount,
+    int capacity,
+    String duration,
+    String ageRange,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSecondary,
+        borderRadius: AppRadii.field,
+        border: Border.all(color: AppColors.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _InfoItem(
+              icon: Icons.people_outline,
+              value: '$participantCount/$capacity',
+              label: 'going',
+            ),
+          ),
+          _divider(),
+          Expanded(
+            child: _InfoItem(
+              icon: Icons.access_time_rounded,
+              value: duration,
+              label: 'Duration',
+            ),
+          ),
+          _divider(),
+          Expanded(
+            child: _InfoItem(
+              icon: Icons.group_outlined,
+              value: ageRange,
+              label: 'All genders',
+            ),
           ),
         ],
       ),
@@ -146,22 +668,31 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
             ),
           ),
           // LIKE BUTTON
+
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
             right: 70,
-            child: _CircleButton(
-              icon: isLiked ? Icons.favorite : Icons.favorite_border,
-              onPressed: () async {
-                final loggedIn = await requireLogin(context);
+            child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream:
+                  FirebaseAuth.instance.currentUser == null || event.id.isEmpty
+                  ? null
+                  : FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(FirebaseAuth.instance.currentUser!.uid)
+                        .collection('likedEvents')
+                        .doc(event.id)
+                        .snapshots(),
+              builder: (context, snapshot) {
+                final liked = snapshot.data?.exists ?? false;
 
-                if (!mounted || !loggedIn) return;
-
-                setState(() {
-                  EventData.toggleLike(event);
-                });
+                return _CircleButton(
+                  icon: liked ? Icons.favorite : Icons.favorite_border,
+                  onPressed: toggleLike,
+                );
               },
             ),
           ),
+
           // SHARE BUTTON
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
@@ -185,133 +716,167 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
   // ==========================================================
   // PARTICIPANTS
   // ==========================================================
-  Widget _buildParticipants(ActivityEvent event) {
-    return Row(
-      children: [
-        // Fake profile circles for now.
-        SizedBox(
-          width: 145,
-          height: 42,
-          child: Stack(
+
+  String _attendeeName(Map<String, dynamic> data) {
+    final name = data['displayName'];
+    return name is String && name.trim().isNotEmpty ? name.trim() : 'Attendee';
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+
+  Future<void> _showAttendees(String eventId) async {
+    if (eventId.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surfaceDark,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.7,
+          child: Column(
             children: [
-              _participantCircle(0, 'A', AppColors.primary),
-              _participantCircle(28, 'M', AppColors.surface),
-              _participantCircle(56, 'J', AppColors.surfaceDark),
-              _participantCircle(84, 'S', AppColors.cardFallback),
-              Positioned(
-                left: 112,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.selectedTab,
-                    border: Border.all(color: AppColors.background, width: 2),
-                  ),
-                  child: Text(
-                    '+${event.participantCount > 4 ? event.participantCount - 4 : 0}',
-                    style: AppTextStyles.eventDate,
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'Event attendees',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 21,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance
+                      .collection('events')
+                      .doc(eventId)
+                      .collection('attendees')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: Text('Could not load attendees.'),
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final attendees = snapshot.data!.docs;
+                    if (attendees.isEmpty) {
+                      return const Center(child: Text('No attendees yet.'));
+                    }
+                    return ListView.builder(
+                      itemCount: attendees.length,
+                      itemBuilder: (context, index) {
+                        final name = _attendeeName(attendees[index].data());
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: AppColors.primary,
+                            child: Text(
+                              _initials(name),
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            name,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
             ],
-          ),
-        ),
-        const Spacer(),
-        Text(
-          '${event.participantCount}/${event.capacity} going',
-          style: AppTextStyles.bodySecondary.copyWith(fontSize: 13),
-        ),
-      ],
-    );
-  }
-
-  Widget _participantCircle(double left, String letter, Color color) {
-    return Positioned(
-      left: left,
-      child: Container(
-        width: 38,
-        height: 38,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.background, width: 2),
-        ),
-        child: Text(
-          letter,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
           ),
         ),
       ),
     );
   }
 
+  Widget _buildParticipants(ActivityEvent event) {
+    if (event.id.isEmpty) return const SizedBox.shrink();
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(event.id)
+          .collection('attendees')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Text(
+            'Attendee list unavailable',
+            style: TextStyle(color: AppColors.textSecondary),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const SizedBox(
+            height: 42,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final attendees = snapshot.data!.docs;
+        final preview = attendees.take(4).toList();
+        return Row(
+          children: [
+            if (preview.isNotEmpty)
+              SizedBox(
+                width: preview.length * 28.0 + 12,
+                height: 40,
+                child: Stack(
+                  children: [
+                    for (var i = 0; i < preview.length; i++)
+                      Positioned(
+                        left: i * 28.0,
+                        child: CircleAvatar(
+                          radius: 19,
+                          backgroundColor: AppColors.primary,
+                          child: Text(
+                            _initials(_attendeeName(preview[i].data())),
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${attendees.length} attending',
+                style: AppTextStyles.bodySecondary.copyWith(fontSize: 13),
+              ),
+            ),
+            TextButton(
+              onPressed: () => _showAttendees(event.id),
+              child: const Text('See all attendees'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // ==========================================================
   // DATE + LOCATION
   // ==========================================================
-  Widget _buildDateAndLocation(ActivityEvent event) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            const Icon(
-              Icons.calendar_month_outlined,
-              color: AppColors.textSecondary,
-              size: 21,
-            ),
-            const SizedBox(width: 9),
-            Text(
-              '${event.formattedDate} · ${event.time}',
-              style: AppTextStyles.bodySecondary,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            const Icon(
-              Icons.location_on_outlined,
-              color: AppColors.textSecondary,
-              size: 21,
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Text(
-                '${event.location} · ${event.distance}',
-                style: AppTextStyles.bodySecondary,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
   // ==========================================================
   // TAGS
   // ==========================================================
-  Widget _buildTags(ActivityEvent event) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: event.tags.map((tag) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: AppRadii.chip,
-            border: Border.all(color: AppColors.borderSubtle),
-          ),
-          child: Text(tag, style: AppTextStyles.filterChip),
-        );
-      }).toList(),
-    );
-  }
-
   // ==========================================================
   // HOST
   // ==========================================================
@@ -369,43 +934,6 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
   // ==========================================================
   // EVENT INFORMATION BOX
   // ==========================================================
-  Widget _buildInformationBox(ActivityEvent event) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceSecondary,
-        borderRadius: AppRadii.field,
-        border: Border.all(color: AppColors.borderSubtle),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _InfoItem(
-              icon: Icons.people_outline,
-              value: '${event.participantCount}/${event.capacity}',
-              label: 'going',
-            ),
-          ),
-          _divider(),
-          Expanded(
-            child: _InfoItem(
-              icon: Icons.access_time_rounded,
-              value: event.duration,
-              label: 'Duration',
-            ),
-          ),
-          _divider(),
-          Expanded(
-            child: _InfoItem(
-              icon: Icons.group_outlined,
-              value: event.ageRange,
-              label: 'All genders',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _divider() {
     return Container(width: 1, height: 45, color: AppColors.border);
@@ -414,85 +942,138 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
   // ==========================================================
   // BOTTOM BAR
   // ==========================================================
+
   Widget _buildBottomBar(ActivityEvent event) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        14,
-        20,
-        MediaQuery.of(context).padding.bottom + 14,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        border: Border(top: BorderSide(color: AppColors.borderSubtle)),
-      ),
-      child: Row(
-        children: [
-          // SPOTS LEFT
-          Expanded(
-            child: Container(
-              height: 58,
-              alignment: Alignment.center,
+    final user = FirebaseAuth.instance.currentUser;
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: event.id.isEmpty
+          ? null
+          : FirebaseFirestore.instance
+                .collection('events')
+                .doc(event.id)
+                .snapshots(),
+      builder: (context, eventSnapshot) {
+        final eventData = eventSnapshot.data?.data();
+        final spotsLeft =
+            (eventData?['availableSpots'] as num?)?.toInt() ??
+            event.availableSpots;
+
+        final isHost = user != null && eventData?['hostId'] == user.uid;
+        final isCancelled = eventData?['status'] == 'cancelled';
+
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: user == null || event.id.isEmpty
+              ? null
+              : FirebaseFirestore.instance
+                    .collection('events')
+                    .doc(event.id)
+                    .collection('attendees')
+                    .doc(user.uid)
+                    .snapshots(),
+          builder: (context, attendeeSnapshot) {
+            final joined = attendeeSnapshot.data?.exists ?? false;
+            final loading =
+                isJoining ||
+                (user != null &&
+                    event.id.isNotEmpty &&
+                    !attendeeSnapshot.hasData);
+
+            final disabled =
+                loading ||
+                isHost ||
+                (isCancelled && !joined) ||
+                (!joined && spotsLeft <= 0) ||
+                event.id.isEmpty;
+
+            final buttonText = isHost
+                ? 'Your event'
+                : joined
+                ? 'Leave event'
+                : isCancelled
+                ? 'Event cancelled'
+                : spotsLeft <= 0
+                ? 'Event full'
+                : "I'm in";
+
+            return Container(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                14,
+                20,
+                MediaQuery.of(context).padding.bottom + 14,
+              ),
               decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: AppRadii.search,
-                border: Border.all(color: AppColors.border),
+                color: AppColors.background,
+                border: Border(top: BorderSide(color: AppColors.borderSubtle)),
               ),
-              child: Text(
-                '${event.availableSpots} spots left',
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          // JOIN BUTTON
-          Expanded(
-            child: SizedBox(
-              height: 58,
-              child: ElevatedButton(
-                onPressed: () async {
-                  final loggedIn = await requireLogin(context);
-
-                  if (!mounted || !loggedIn) return;
-
-                  setState(() {
-                    EventData.toggleJoin(event);
-                  });
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        hasJoined
-                            ? 'You joined ${event.title}!'
-                            : 'You left ${event.title}.',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 58,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: AppRadii.search,
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Text(
+                        '$spotsLeft spots left',
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  elevation: 0,
-                  backgroundColor: hasJoined
-                      ? AppColors.selectedTab
-                      : AppColors.primary,
-                  foregroundColor: AppColors.textPrimary,
-                  shape: RoundedRectangleBorder(borderRadius: AppRadii.search),
-                ),
-                child: Text(
-                  hasJoined ? 'Joined ✓' : "I'm in",
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
                   ),
-                ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: SizedBox(
+                      height: 58,
+                      child: ElevatedButton(
+                        onPressed: disabled
+                            ? null
+                            : joined
+                            ? leaveEvent
+                            : joinEvent,
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: joined
+                              ? AppColors.selectedTab
+                              : AppColors.primary,
+                          foregroundColor: AppColors.textPrimary,
+                          disabledBackgroundColor: AppColors.selectedTab,
+                          disabledForegroundColor: AppColors.textPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: AppRadii.search,
+                          ),
+                        ),
+                        child: loading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                buttonText,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
-        ],
-      ),
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'base_widgets.dart';
 import 'create_event_page.dart';
-import 'event_data.dart';
 import 'model.dart';
 import 'activity_details_page.dart';
 import 'ticket_filter.dart';
+import 'app_bottom_navigation.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // ============================================================
 // TICKETS PAGE
@@ -20,18 +23,104 @@ class TicketsPage extends StatefulWidget {
 }
 
 class _TicketsPageState extends State<TicketsPage> {
+  ActivityEvent _eventFromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data()!;
+
+    final activity = data['activity'] as String? ?? 'Other';
+
+    final category = switch (activity) {
+      'Padel' || 'Running' || 'Gym' => 'Sports',
+      'Drinks' => 'Nightlife',
+      'Coffee' => 'Food',
+      'Gaming' => 'Games',
+      'Walk' => 'Wellness',
+      _ => 'Other',
+    };
+
+    return ActivityEvent(
+      id: document.id,
+      title: data['title'] as String? ?? '',
+      date: (data['date'] as Timestamp).toDate(),
+      location: data['location'] as String? ?? '',
+      availableSpots: (data['availableSpots'] as num?)?.toInt() ?? 0,
+      imageUrl: data['imageUrl'] as String? ?? '',
+      time: data['time'] as String? ?? '',
+      description: data['description'] as String? ?? '',
+      hostName: data['hostName'] as String? ?? 'Host',
+      duration: data['duration'] as String? ?? '',
+      minAge: (data['minAge'] as num?)?.toInt() ?? 18,
+      maxAge: (data['maxAge'] as num?)?.toInt() ?? 70,
+      capacity: (data['capacity'] as num?)?.toInt() ?? 0,
+      activity: activity,
+      city: data['city'] as String? ?? '',
+      distance: data['distance'] as String? ?? '',
+      participantCount: (data['participantCount'] as num?)?.toInt() ?? 0,
+      tags: <String>{
+        category,
+        activity,
+        ...List<String>.from(data['tags'] ?? []),
+      }.toList(),
+    );
+  }
+
+  Widget _buildRealEventCard(ActivityEvent event, {bool isCancelled = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isCancelled)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.selectedTab,
+                  borderRadius: AppRadii.chip,
+                ),
+                child: const Text(
+                  'Cancelled',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          EventCard(
+            imageUrl: event.imageUrl.isNotEmpty ? event.imageUrl : 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
+            title: event.title,
+            date: event.formattedDate,
+            location: event.location,
+            availableSpots: event.availableSpots,
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EventDetailsPage(event: event),
+                ),
+              );
+
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   final searchController = TextEditingController();
   final ticketFilter = TicketFilter();
 
   int selectedNavigationIndex = 1;
   String selectedTicketCategory = 'Liked';
 
-  final ticketCategories = [
-    'Liked',
-    'Queued',
-    'Attending',
-    'Hosting',
-  ];
+  final ticketCategories = ['Liked', 'Queued', 'Attending', 'Hosting'];
 
   @override
   void dispose() {
@@ -83,26 +172,11 @@ class _TicketsPageState extends State<TicketsPage> {
               ),
             ),
 
-            const SliverToBoxAdapter(
-              child: SizedBox(height: 110),
-            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 110)),
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigation(
-        selectedIndex: selectedNavigationIndex,
-        onSelected: (index) {
-          if (index == 0) {
-            Navigator.of(context).pop();
-            return;
-          }
-
-          setState(() {
-            selectedNavigationIndex = index;
-          });
-        },
-        onAddPressed: _createEvent,
-      ),
+      bottomNavigationBar: const AppBottomNavigation(selectedIndex: 1),
     );
   }
 
@@ -112,10 +186,7 @@ class _TicketsPageState extends State<TicketsPage> {
 
   Widget _pageTitle() {
     return const Center(
-      child: Text(
-        'Your Tickets',
-        style: AppTextStyles.pageTitle,
-      ),
+      child: Text('Your Tickets', style: AppTextStyles.pageTitle),
     );
   }
 
@@ -168,126 +239,233 @@ class _TicketsPageState extends State<TicketsPage> {
 
   Widget _ticketContent() {
     if (selectedTicketCategory == 'Liked') {
-      final events = EventData.events
-          .where((event) => EventData.likedEvents.contains(event.title))
-          .toList();
-      if (events.isEmpty) return _emptyMessage('No liked events');
-      return Column(
-        children: events.map((event) => Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-          child: EventCard(
-            imageUrl: event.imageUrl,
-            title: event.title,
-            date: event.formattedDate,
-            location: event.location,
-            availableSpots: event.availableSpots,
-            showFavoriteButton: true,
-            isLiked: true,
-            onLikePressed: () => setState(() => EventData.toggleLike(event)),
-            onTap: () async {
-              await Navigator.push(context, MaterialPageRoute(
-                builder: (_) => EventDetailsPage(event: event),
-              ));
-              if (mounted) setState(() {});
-            },
-          ),
-        )).toList(),
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) {
+        return _emptyMessage('Please log in to see your liked events');
+      }
+
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('likedEvents')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _emptyMessage(
+              'Could not load liked events: ${snapshot.error}',
+            );
+          }
+
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final likedDocs = snapshot.data!.docs;
+
+          if (likedDocs.isEmpty) {
+            return _emptyMessage('No liked events yet');
+          }
+
+          return Column(
+            children: likedDocs.map((likedDoc) {
+              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('events')
+                    .doc(likedDoc.id)
+                    .snapshots(),
+                builder: (context, eventSnapshot) {
+                  if (eventSnapshot.hasError) {
+                    return _emptyMessage('Could not load a liked event');
+                  }
+
+                  if (!eventSnapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+
+                  if (!eventSnapshot.data!.exists) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final event = _eventFromFirestore(eventSnapshot.data!);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+                    child: EventCard(
+                      imageUrl: event.imageUrl.isNotEmpty ? event.imageUrl : 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
+                      title: event.title,
+                      date: event.formattedDate,
+                      location: event.location,
+                      availableSpots: event.availableSpots,
+                      showFavoriteButton: true,
+                      isLiked: true,
+                      onLikePressed: () async {
+                        try {
+                          await likedDoc.reference.delete();
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Could not remove like: $e'),
+                            ),
+                          );
+                        }
+                      },
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => EventDetailsPage(event: event),
+                          ),
+                        );
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  );
+                },
+              );
+            }).toList(),
+          );
+        },
       );
     }
 
     if (selectedTicketCategory == 'Attending') {
-      final events = EventData.events
-          .where((event) => EventData.attendingEvents.contains(event.title))
-          .toList();
-      if (events.isEmpty) return _emptyMessage('No attending events');
-      return Column(
-        children: events.map((event) => Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-          child: EventCard(
-            imageUrl: event.imageUrl,
-            title: event.title,
-            date: event.formattedDate,
-            location: event.location,
-            availableSpots: event.availableSpots,
-            onTap: () async {
-              await Navigator.push(context, MaterialPageRoute(
-                builder: (_) => EventDetailsPage(event: event),
-              ));
-              if (mounted) setState(() {});
-            },
-          ),
-        )).toList(),
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) {
+        return _emptyMessage('Please log in to see your events');
+      }
+
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collectionGroup('attendees')
+            .where('userId', isEqualTo: user.uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _emptyMessage(
+              'Could not load attending events: ${snapshot.error}',
+            );
+          }
+
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final attendeeDocs = snapshot.data!.docs;
+
+          if (attendeeDocs.isEmpty) {
+            return _emptyMessage('No attending events yet');
+          }
+
+          return Column(
+            children: attendeeDocs.map((attendeeDoc) {
+              final eventRef = attendeeDoc.reference.parent.parent;
+
+              if (eventRef == null) {
+                return const SizedBox.shrink();
+              }
+
+              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: eventRef.snapshots(),
+                builder: (context, eventSnapshot) {
+                  if (eventSnapshot.hasError) {
+                    return _emptyMessage('Could not load an event');
+                  }
+
+                  if (!eventSnapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+
+                  if (!eventSnapshot.data!.exists) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final event = _eventFromFirestore(eventSnapshot.data!);
+
+                  return _buildRealEventCard(event);
+                },
+              );
+            }).toList(),
+          );
+        },
       );
     }
 
     if (selectedTicketCategory == 'Queued') {
-      return EventCard(
-        imageUrl:
-            'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
-        title: 'Beginner Padel Night',
-        date: '15/10/2026',
-        location: 'Padel Center',
-        availableSpots: 0,
-        queuePosition: 4,
-        onTap: () {},
-      );
+      return _emptyMessage('No queued events yet');
     }
 
     if (selectedTicketCategory == 'Hosting') {
-      final events = applyTicketFilters(
-        EventData.hostedEvents,
-        ticketFilter,
-      );
+      final user = FirebaseAuth.instance.currentUser;
 
-      if (events.isEmpty) {
-        return _emptyMessage('No hosted events');
+      if (user == null) {
+        return _emptyMessage('Please log in to see your hosted events');
       }
 
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Your hosted events',
-            style: AppTextStyles.sectionTitle,
-          ),
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('events')
+            .where('hostId', isEqualTo: user.uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _emptyMessage(
+              'Could not load hosted events: ${snapshot.error}',
+            );
+          }
 
-          const SizedBox(height: AppSpacing.lg),
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-          ...events.map(
-            (event) => Padding(
-              padding: const EdgeInsets.only(
-                bottom: AppSpacing.lg,
+          final docs = snapshot.data!.docs;
+          final events = docs.map(_eventFromFirestore).toList();
+          final cancelledById = <String, bool>{
+            for (final doc in docs) doc.id: doc.data()['status'] == 'cancelled',
+          };
+
+          final filteredEvents = applyTicketFilters(events, ticketFilter);
+
+          if (filteredEvents.isEmpty) {
+            return _emptyMessage('No hosted events yet');
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your hosted events',
+                style: AppTextStyles.sectionTitle,
               ),
-              child: EventCard(
-                imageUrl: event.imageUrl,
-                title: event.title,
-                date: event.formattedDate,
-                location: event.location,
-                availableSpots: event.availableSpots,
-                onTap: () {},
+              const SizedBox(height: AppSpacing.lg),
+              ...filteredEvents.map(
+                (event) => _buildRealEventCard(
+                  event,
+                  isCancelled: cancelledById[event.id] ?? false,
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       );
     }
 
-    return _emptyMessage(
-      'No $selectedTicketCategory events',
-    );
+    return _emptyMessage('No $selectedTicketCategory events');
   }
 
   Widget _emptyMessage(String text) {
     return Padding(
-      padding: const EdgeInsets.only(
-        top: AppSpacing.huge,
-      ),
-      child: Center(
-        child: Text(
-          text,
-          style: AppTextStyles.emptyMessage,
-        ),
-      ),
+      padding: const EdgeInsets.only(top: AppSpacing.huge),
+      child: Center(child: Text(text, style: AppTextStyles.emptyMessage)),
     );
   }
 
@@ -296,10 +474,7 @@ class _TicketsPageState extends State<TicketsPage> {
   // ============================================================
 
   Future<void> _openFilter() async {
-    final result = await showTicketFilter(
-      context,
-      ticketFilter,
-    );
+    final result = await showTicketFilter(context, ticketFilter);
 
     if (result != null) {
       setState(() {});
@@ -313,9 +488,7 @@ class _TicketsPageState extends State<TicketsPage> {
   Future<void> _createEvent() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const CreateEventPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const CreateEventPage()),
     );
 
     setState(() {});

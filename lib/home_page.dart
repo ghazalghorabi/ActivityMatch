@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_bottom_navigation.dart';
 import 'app_theme.dart';
 import 'base_widgets.dart';
 import 'create_event_page.dart';
@@ -7,6 +8,9 @@ import 'tickets_page.dart';
 import 'activity_details_page.dart';
 import 'model.dart';
 import 'event_data.dart';
+import 'notifications_page.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -21,6 +25,46 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  ActivityEvent eventFromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data()!;
+
+    final activity = data['activity'] as String? ?? 'Other';
+    final category = switch (activity) {
+      'Padel' || 'Running' || 'Gym' => 'Sports',
+      'Drinks' => 'Nightlife',
+      'Coffee' => 'Food',
+      'Gaming' => 'Games',
+      'Walk' => 'Wellness',
+      _ => 'Other',
+    };
+
+    final savedTags = List<String>.from(data['tags'] ?? []);
+    final tags = <String>{category, activity, ...savedTags}.toList();
+
+    return ActivityEvent(
+      id: document.id,
+      title: data['title'] as String? ?? '',
+      date: (data['date'] as Timestamp).toDate(),
+      time: data['time'] as String? ?? '',
+      location: data['location'] as String? ?? '',
+      city: data['city'] as String? ?? '',
+      distance: data['distance'] as String? ?? '',
+      availableSpots: (data['availableSpots'] as num?)?.toInt() ?? 0,
+      participantCount: (data['participantCount'] as num?)?.toInt() ?? 0,
+      capacity: (data['capacity'] as num?)?.toInt() ?? 0,
+      duration: data['duration'] as String? ?? '',
+      minAge: (data['minAge'] as num?)?.toInt() ?? 18,
+      maxAge: (data['maxAge'] as num?)?.toInt() ?? 70,
+      hostName: data['hostName'] as String? ?? 'Host',
+      tags: tags,
+      activity: activity,
+      description: data['description'] as String? ?? '',
+      imageUrl: data['imageUrl'] as String? ?? '',
+    );
+  }
+
   final TextEditingController searchController = TextEditingController();
   String selectedCategory = 'All activities';
   int selectedNavigationIndex = 0;
@@ -44,8 +88,31 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  List<ActivityEvent> get filteredEvents {
-    return EventData.events.where((event) {
+  List<ActivityEvent> getRecommendedEvents(
+    List<ActivityEvent> sourceEvents,
+    List<String> interests,
+  ) {
+    final events = List<ActivityEvent>.from(getFilteredEvents(sourceEvents));
+
+    if (interests.isEmpty) return events;
+
+    final normalizedInterests = interests
+        .map((interest) => interest.trim().toLowerCase())
+        .toSet();
+
+    int score(ActivityEvent event) {
+      return event.tags.where((tag) {
+        return normalizedInterests.contains(tag.trim().toLowerCase());
+      }).length;
+    }
+
+    events.sort((a, b) => score(b).compareTo(score(a)));
+
+    return events;
+  }
+
+  List<ActivityEvent> getFilteredEvents(List<ActivityEvent> sourceEvents) {
+    return sourceEvents.where((event) {
       final matchesCity =
           selectedCity == 'All cities' || event.city == selectedCity;
       final matchesCategory =
@@ -68,153 +135,171 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      extendBody: true,
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.xl,
-                AppSpacing.xl,
-                0,
-              ),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  const Header(),
-                  const SizedBox(height: AppSpacing.xl),
-                  SearchSection(
-                    controller: searchController,
-                    onFilterPressed: openFilters,
-                    onSearch: (text) {
-                      setState(() {});
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  CategorySelector(
-                    categories: categories,
-                    selectedCategory: selectedCategory,
-                    onSelected: (category) {
-                      setState(() {
-                        selectedCategory = category;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.xxl),
-                  SectionHeader(
-                    title: 'Suggested events',
-                    onViewAll: () {
-                      debugPrint('View all suggested events');
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  FeaturedEventCard(
-                    onExplore: () {
-                      debugPrint('Explore event');
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  SectionHeader(
-                    title: 'Popular events',
-                    onViewAll: () {
-                      debugPrint('View all popular events');
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ]),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: AppSizes.eventCardHeight,
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xl,
-                  ),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: filteredEvents.length,
-                  separatorBuilder: (context, index) {
-                    return const SizedBox(width: AppSpacing.sm);
-                  },
-                  itemBuilder: (context, index) {
-                    final event = filteredEvents[index];
-                    return EventCard(
-                      width: 180,
-                      height: AppSizes.eventCardHeight,
-                      imageUrl: event.imageUrl,
-                      title: event.title,
-                      date: event.formattedDate,
-                      location: event.location,
-                      availableSpots: event.availableSpots,
-                      showFavoriteButton: true,
-                      isLiked: EventData.likedEvents.contains(event.title),
-                      onLikePressed: () async {
-                        final loggedIn = await requireLogin(context);
-                        if (!loggedIn || !mounted) return;
+    final user = FirebaseAuth.instance.currentUser;
 
-                        setState(() {
-                          EventData.toggleLike(event);
-                        });
-                      },
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => EventDetailsPage(event: event),
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: user == null
+          ? null
+          : FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        final interests = List<String>.from(data?['interests'] ?? []);
+
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('events').snapshots(),
+          builder: (context, eventsSnapshot) {
+            if (eventsSnapshot.hasError) {
+              return Scaffold(
+                backgroundColor: AppColors.background,
+                body: Center(
+                  child: Text('Could not load events: ${eventsSnapshot.error}'),
+                ),
+              );
+            }
+
+            if (!eventsSnapshot.hasData) {
+              return const Scaffold(
+                backgroundColor: AppColors.background,
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            // Hide cancelled events from discovery.
+            // Older events without a status field remain active.
+            final realEvents = eventsSnapshot.data!.docs
+                .where((document) {
+                  final status = document.data()['status'];
+                  return status == null || status == 'active';
+                })
+                .map(eventFromFirestore)
+                .toList();
+
+            final recommendedEvents = getRecommendedEvents(
+              realEvents,
+              interests,
+            );
+
+            return Scaffold(
+              backgroundColor: AppColors.background,
+              extendBody: true,
+              body: SafeArea(
+                child: CustomScrollView(
+                  slivers: [
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.xl,
+                        AppSpacing.xl,
+                        AppSpacing.xl,
+                        0,
+                      ),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate([
+                          const Header(),
+                          const SizedBox(height: AppSpacing.xl),
+                          SearchSection(
+                            controller: searchController,
+                            onFilterPressed: openFilters,
+                            onSearch: (text) {
+                              setState(() {});
+                            },
                           ),
-                        );
-                        if (mounted) setState(() {});
-                      },
-                    );
-                  },
+                          const SizedBox(height: AppSpacing.lg),
+                          CategorySelector(
+                            categories: categories,
+                            selectedCategory: selectedCategory,
+                            onSelected: (category) {
+                              setState(() {
+                                selectedCategory = category;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: AppSpacing.xxl),
+                          SectionHeader(
+                            title: 'Suggested events',
+                            onViewAll: () {
+                              debugPrint('View all suggested events');
+                            },
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          FeaturedEventCard(
+                            onExplore: () {
+                              debugPrint('Explore event');
+                            },
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          SectionHeader(
+                            title: 'Events for you',
+                            onViewAll: () {
+                              debugPrint('View all popular events');
+                            },
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                        ]),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: AppSizes.eventCardHeight,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xl,
+                          ),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: recommendedEvents.length,
+                          separatorBuilder: (context, index) {
+                            return const SizedBox(width: AppSpacing.sm);
+                          },
+                          itemBuilder: (context, index) {
+                            final event = recommendedEvents[index];
+                            return EventCard(
+                              width: 180,
+                              height: AppSizes.eventCardHeight,
+                              imageUrl: event.imageUrl.isNotEmpty
+                                  ? event.imageUrl
+                                  : 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
+                              title: event.title,
+                              date: event.formattedDate,
+                              location: event.location,
+                              availableSpots: event.availableSpots,
+                              showFavoriteButton: true,
+                              isLiked: EventData.likedEvents.contains(
+                                event.title,
+                              ),
+                              onLikePressed: () async {
+                                final loggedIn = await requireLogin(context);
+                                if (!loggedIn || !mounted) return;
+
+                                setState(() {
+                                  EventData.toggleLike(event);
+                                });
+                              },
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        EventDetailsPage(event: event),
+                                  ),
+                                );
+                                if (mounted) setState(() {});
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                  ],
                 ),
               ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 110)),
-          ],
-        ),
-      ),
-      bottomNavigationBar: BottomNavigation(
-        selectedIndex: selectedNavigationIndex,
-
-        onSelected: (index) async {
-          if (index == 1) {
-            // Tickets: login required
-            final loggedIn = await requireLogin(context);
-            if (!loggedIn || !mounted) return;
-
-            await Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const TicketsPage()));
-
-            if (mounted) setState(() {});
-          } else if (index == 3) {
-            // Profile: login required
-            final loggedIn = await requireLogin(context);
-            if (!loggedIn || !mounted) return;
-
-            await Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const ProfilePage()));
-
-            if (mounted) setState(() {});
-          } else {
-            setState(() {
-              selectedNavigationIndex = index;
-            });
-          }
-        },
-
-        onAddPressed: () async {
-          final loggedIn = await requireLogin(context);
-          if (!loggedIn || !mounted) return;
-
-          await Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const CreateEventPage()));
-
-          if (mounted) setState(() {});
-        },
-      ),
+              bottomNavigationBar: const AppBottomNavigation(selectedIndex: 0),
+            );
+          },
+        );
+      },
     );
   }
 

@@ -55,10 +55,7 @@ class _LookingForPageState extends State<LookingForPage> {
 
               const Text(
                 'Choose what you would like to get out of ActivityMatch.',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 15,
-                ),
+                style: TextStyle(color: Colors.white70, fontSize: 15),
               ),
 
               const SizedBox(height: 30),
@@ -67,8 +64,7 @@ class _LookingForPageState extends State<LookingForPage> {
                 spacing: 10,
                 runSpacing: 10,
                 children: options.map((option) {
-                  final bool selected =
-                  selectedOptions.contains(option);
+                  final bool selected = selectedOptions.contains(option);
 
                   return FilterChip(
                     label: Text(option),
@@ -78,9 +74,7 @@ class _LookingForPageState extends State<LookingForPage> {
                     selectedColor: orangeColor,
                     side: BorderSide.none,
                     labelStyle: TextStyle(
-                      color: selected
-                          ? Colors.black
-                          : Colors.white,
+                      color: selected ? Colors.black : Colors.white,
                       fontWeight: selected
                           ? FontWeight.bold
                           : FontWeight.normal,
@@ -107,8 +101,8 @@ class _LookingForPageState extends State<LookingForPage> {
                   onPressed: selectedOptions.isEmpty
                       ? null
                       : () {
-                    // Next onboarding page comes here.
-                  },
+                          // Next onboarding page comes here.
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: orangeColor,
                     foregroundColor: Colors.black,
@@ -120,10 +114,7 @@ class _LookingForPageState extends State<LookingForPage> {
                   ),
                   child: const Text(
                     'Continue',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),

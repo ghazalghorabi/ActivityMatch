@@ -20,6 +20,7 @@ class ActivityEvent {
   final String distance;
   final int participantCount;
   final List<String> tags;
+  final String id;
 
   const ActivityEvent({
     required this.title,
@@ -39,10 +40,10 @@ class ActivityEvent {
     this.distance = '',
     this.participantCount = 0,
     this.tags = const [],
+    this.id = '',
   });
 
   String get ageRange => '$minAge–$maxAge';
 
-  String get formattedDate =>
-      '${date.day}/${date.month}/${date.year}';
+  String get formattedDate => '${date.day}/${date.month}/${date.year}';
 }

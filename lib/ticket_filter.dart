@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'model.dart';
 import 'app_theme.dart';
 
@@ -44,9 +45,7 @@ List<ActivityEvent> applyTicketFilters(
     if (filter.when == 'Past' && upcoming) return false;
 
     if (filter.location.isNotEmpty &&
-        !event.location
-            .toLowerCase()
-            .contains(filter.location.toLowerCase())) {
+        !event.location.toLowerCase().contains(filter.location.toLowerCase())) {
       return false;
     }
 
@@ -62,8 +61,7 @@ List<ActivityEvent> applyTicketFilters(
       return false;
     }
 
-    if (event.maxAge < filter.age.start ||
-        event.minAge > filter.age.end) {
+    if (event.maxAge < filter.age.start || event.minAge > filter.age.end) {
       return false;
     }
 
@@ -105,15 +103,9 @@ Future<TicketFilter?> showTicketFilter(
       return StatefulBuilder(
         builder: (context, setState) {
           Widget title(String text) => Padding(
-                padding: const EdgeInsets.only(
-                  top: 22,
-                  bottom: AppSpacing.sm,
-                ),
-                child: Text(
-                  text,
-                  style: AppTextStyles.formLabel,
-                ),
-              );
+            padding: const EdgeInsets.only(top: 22, bottom: AppSpacing.sm),
+            child: Text(text, style: AppTextStyles.formLabel),
+          );
 
           Widget choices(
             List<String> values,
@@ -129,9 +121,7 @@ Future<TicketFilter?> showTicketFilter(
                   selected: selected == value,
                   showCheckmark: false,
                   selectedColor: AppColors.primary,
-                  onSelected: (_) => setState(
-                    () => onSelected(value),
-                  ),
+                  onSelected: (_) => setState(() => onSelected(value)),
                 );
               }).toList(),
             );
@@ -175,8 +165,7 @@ Future<TicketFilter?> showTicketFilter(
                   title('Date'),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading:
-                        const Icon(Icons.calendar_today_outlined),
+                    leading: const Icon(Icons.calendar_today_outlined),
                     title: Text(
                       filter.date == null
                           ? 'Any date'
@@ -201,8 +190,7 @@ Future<TicketFilter?> showTicketFilter(
                     spacing: AppSpacing.sm,
                     runSpacing: AppSpacing.sm,
                     children: activities.map((activity) {
-                      final selected =
-                          filter.activities.contains(activity);
+                      final selected = filter.activities.contains(activity);
 
                       return FilterChip(
                         label: Text(activity),
@@ -223,8 +211,7 @@ Future<TicketFilter?> showTicketFilter(
                   title('Age'),
 
                   Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('${filter.age.start.round()}'),
                       Text(
@@ -266,8 +253,7 @@ Future<TicketFilter?> showTicketFilter(
                               filter.distance = 'Any';
                               filter.date = null;
                               filter.activities.clear();
-                              filter.age =
-                                  const RangeValues(18, 70);
+                              filter.age = const RangeValues(18, 70);
                               filter.sortBy = 'Soonest';
                             });
                           },
@@ -326,32 +312,30 @@ class ActiveTicketFilters extends StatelessWidget {
 
     if (filter.distance != 'Any') {
       filters.add(
-        MapEntry(
-          '≤ ${filter.distance}',
-          () => filter.distance = 'Any',
-        ),
+        MapEntry('≤ ${filter.distance}', () => filter.distance = 'Any'),
       );
     }
 
     if (filter.date != null) {
-      filters.add(MapEntry(
-        '${filter.date!.day}/${filter.date!.month}/${filter.date!.year}',
-        () => filter.date = null,
-      ));
+      filters.add(
+        MapEntry(
+          '${filter.date!.day}/${filter.date!.month}/${filter.date!.year}',
+          () => filter.date = null,
+        ),
+      );
     }
 
     for (final activity in filter.activities) {
-      filters.add(MapEntry(
-        activity,
-        () => filter.activities.remove(activity),
-      ));
+      filters.add(MapEntry(activity, () => filter.activities.remove(activity)));
     }
 
     if (filter.age.start != 18 || filter.age.end != 70) {
-      filters.add(MapEntry(
-        '${filter.age.start.round()}–${filter.age.end.round() == 70 ? '70+' : filter.age.end.round()}',
-        () => filter.age = const RangeValues(18, 70),
-      ));
+      filters.add(
+        MapEntry(
+          '${filter.age.start.round()}–${filter.age.end.round() == 70 ? '70+' : filter.age.end.round()}',
+          () => filter.age = const RangeValues(18, 70),
+        ),
+      );
     }
 
     if (filters.isEmpty) {
@@ -363,23 +347,16 @@ class ActiveTicketFilters extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: filters.length,
-        separatorBuilder: (_, __) =>
-            const SizedBox(width: 7),
+        separatorBuilder: (_, __) => const SizedBox(width: 7),
         itemBuilder: (context, index) {
           final item = filters[index];
 
           return Container(
-            padding: const EdgeInsets.only(
-              left: 12,
-              right: AppSpacing.xs,
-            ),
+            padding: const EdgeInsets.only(left: 12, right: AppSpacing.xs),
             decoration: AppDecorations.filterChip,
             child: Row(
               children: [
-                Text(
-                  item.key,
-                  style: AppTextStyles.filterChip,
-                ),
+                Text(item.key, style: AppTextStyles.filterChip),
 
                 const SizedBox(width: AppSpacing.xxs),
 

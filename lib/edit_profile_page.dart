@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -8,26 +10,12 @@ class EditProfilePage extends StatefulWidget {
 }
 
 class _EditProfilePageState extends State<EditProfilePage> {
-  final TextEditingController nameController = TextEditingController(
-    text: 'Emma',
-  );
-
-  final TextEditingController ageController = TextEditingController(text: '23');
-
-  final TextEditingController locationController = TextEditingController(
-    text: 'Lund',
-  );
-
-  final TextEditingController bioController = TextEditingController(
-    text:
-        'Just moved to Lund and excited to meet new people! '
-        'I love being active, trying new things and good coffee. '
-        'Always up for a fun activity and great company!',
-  );
-
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController ageController = TextEditingController();
+  final TextEditingController locationController = TextEditingController();
+  final TextEditingController bioController = TextEditingController();
   final TextEditingController customInterestController =
       TextEditingController();
-
   static const Color backgroundColor = Color(0xFF120B06);
   static const Color cardColor = Color(0xFF211A15);
   static const Color orangeColor = Color(0xFFFFA33A);
@@ -41,14 +29,108 @@ class _EditProfilePageState extends State<EditProfilePage> {
     'Travel',
   ];
 
-  final Set<String> selectedInterests = {
-    'Running',
-    'Padel',
-    'Coffee',
-    'Hiking',
-    'Food & Drinks',
-    'Travel',
-  };
+  final Set<String> selectedInterests = {};
+
+  @override
+  void initState() {
+    super.initState();
+    loadProfile();
+  }
+
+  Future<void> loadProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final document = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (!mounted) return;
+
+      if (document.exists) {
+        final data = document.data()!;
+
+        setState(() {
+          nameController.text = data['name'] ?? '';
+          ageController.text = data['age']?.toString() ?? '';
+          locationController.text = data['location'] ?? '';
+          bioController.text = data['bio'] ?? '';
+
+          selectedInterests.clear();
+          selectedInterests.addAll(List<String>.from(data['interests'] ?? []));
+
+          for (final interest in selectedInterests) {
+            if (!availableInterests.contains(interest)) {
+              availableInterests.add(interest);
+            }
+          }
+        });
+      } else {
+        nameController.text = user.displayName ?? '';
+      }
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not load profile: $error')));
+    }
+  }
+
+  Future<void> saveProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Please log in first')));
+      return;
+    }
+
+    final name = nameController.text.trim();
+    final age = int.tryParse(ageController.text.trim());
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter your name')));
+      return;
+    }
+
+    if (age == null || age < 1 || age > 120) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter a valid age')));
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'name': name,
+        'age': age,
+        'location': locationController.text.trim(),
+        'bio': bioController.text.trim(),
+        'interests': selectedInterests.toList(),
+      }, SetOptions(merge: true));
+
+      await user.updateDisplayName(name);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile saved successfully!')),
+      );
+
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save profile: $error')));
+    }
+  }
 
   void addCustomInterest() {
     final String newInterest = customInterestController.text.trim();
@@ -334,9 +416,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
+                onPressed: saveProfile,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: orangeColor,
                   foregroundColor: Colors.black,

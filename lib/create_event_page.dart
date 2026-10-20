@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'base_widgets.dart';
 import 'event_data.dart';
@@ -81,11 +83,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
               }).toList(),
             ),
             _label('Description'),
-            _field(
-              description,
-              'Tell people about the event',
-              lines: 3,
-            ),
+            _field(description, 'Tell people about the event', lines: 3),
             _label('Date'),
             _box(
               Icons.calendar_today_outlined,
@@ -118,10 +116,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
                       : null,
                   icon: const Icon(Icons.remove),
                 ),
-                Text(
-                  '$capacity people',
-                  style: AppTextStyles.bodyLarge,
-                ),
+                Text('$capacity people', style: AppTextStyles.bodyLarge),
                 IconButton(
                   onPressed: () => setState(() => capacity++),
                   icon: const Icon(Icons.add),
@@ -162,9 +157,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
   Widget _photo() => GestureDetector(
     onTap: () async {
-      final picked = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-      );
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
 
       if (picked != null) {
         setState(() => image = picked);
@@ -180,15 +173,10 @@ class _CreateEventPageState extends State<CreateEventPage> {
               future: image!.readAsBytes(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
+                  return const Center(child: CircularProgressIndicator());
                 }
 
-                return Image.memory(
-                  snapshot.data!,
-                  fit: BoxFit.cover,
-                );
+                return Image.memory(snapshot.data!, fit: BoxFit.cover);
               },
             )
           : const Column(
@@ -207,49 +195,34 @@ class _CreateEventPageState extends State<CreateEventPage> {
   // ============================================================
 
   Widget _label(String text) => Padding(
-        padding: const EdgeInsets.only(
-          top: AppSpacing.xxl,
-          bottom: AppSpacing.sm,
-        ),
-        child: Text(
-          '$text *',
-          style: AppTextStyles.formLabel,
-        ),
-      );
+    padding: const EdgeInsets.only(top: AppSpacing.xxl, bottom: AppSpacing.sm),
+    child: Text('$text *', style: AppTextStyles.formLabel),
+  );
 
   Widget _field(
     TextEditingController controller,
     String hint, {
     int lines = 1,
     IconData? icon,
-  }) =>
-      TextField(
-        controller: controller,
-        maxLines: lines,
-        decoration: AppInputs.field(
-          hint: hint,
-          icon: icon,
-        ),
-      );
+  }) => TextField(
+    controller: controller,
+    maxLines: lines,
+    decoration: AppInputs.field(hint: hint, icon: icon),
+  );
 
   Widget _box(IconData icon, String text, VoidCallback tap) => ListTile(
-        onTap: tap,
-        tileColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppRadii.field,
-        ),
-        leading: Icon(icon),
-        title: Text(text),
-      );
+    onTap: tap,
+    tileColor: AppColors.surface,
+    shape: RoundedRectangleBorder(borderRadius: AppRadii.field),
+    leading: Icon(icon),
+    title: Text(text),
+  );
 
   // ============================================================
   // TIME
   // ============================================================
 
-  Widget _timeField(
-    TextEditingController controller,
-    String hint,
-  ) {
+  Widget _timeField(TextEditingController controller, String hint) {
     final times = [
       for (var h = 0; h < 24; h++)
         for (var m in [0, 15, 30, 45])
@@ -261,9 +234,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
         final input = value.text.replaceAll(':', '');
         if (input.isEmpty) return const Iterable<String>.empty();
 
-        return times.where(
-          (t) => t.replaceAll(':', '').startsWith(input),
-        );
+        return times.where((t) => t.replaceAll(':', '').startsWith(input));
       },
       onSelected: (value) => controller.text = value,
       fieldViewBuilder: (_, textController, focus, __) {
@@ -272,10 +243,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
           focusNode: focus,
           keyboardType: TextInputType.number,
           onChanged: (value) => controller.text = value,
-          decoration: AppInputs.field(
-            hint: hint,
-            icon: Icons.access_time,
-          ),
+          decoration: AppInputs.field(hint: hint, icon: Icons.access_time),
         );
       },
     );
@@ -300,42 +268,94 @@ class _CreateEventPageState extends State<CreateEventPage> {
   // CREATE EVENT
   // ============================================================
 
-  void _create() {
+  Future<void> _create() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Please log in first')));
+      return;
+    }
+
     final validTime = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
 
-    if (image == null ||
-        title.text.trim().isEmpty ||
+    if (title.text.trim().isEmpty ||
         description.text.trim().isEmpty ||
         location.text.trim().isEmpty ||
         date == null ||
         !validTime.hasMatch(startTime.text) ||
         !validTime.hasMatch(endTime.text)) {
       ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in all required fields')),
+      );
+      return;
+    }
+
+    final startParts = startTime.text.split(':').map(int.parse).toList();
+    final endParts = endTime.text.split(':').map(int.parse).toList();
+
+    final eventStart = DateTime(
+      date!.year,
+      date!.month,
+      date!.day,
+      startParts[0],
+      startParts[1],
+    );
+
+    final eventEnd = DateTime(
+      date!.year,
+      date!.month,
+      date!.day,
+      endParts[0],
+      endParts[1],
+    );
+
+    if (!eventStart.isAfter(DateTime.now()) || !eventEnd.isAfter(eventStart)) {
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please fill in all required fields'),
+          content: Text('Choose a future event with a valid end time'),
         ),
       );
       return;
     }
 
-    EventData.addEvent(
-      ActivityEvent(
-        title: title.text.trim(),
-        date: date!,
-        location: location.text.trim(),
-        availableSpots: capacity,
-        imageUrl: image!.path,
-        time: startTime.text,
-        description: description.text.trim(),
-        hostName: 'You',
-        duration: '${startTime.text} – ${endTime.text}',
-        minAge: age.start.round(),
-        maxAge: age.end.round(),
-        capacity: capacity,
-        activity: activity,
-      ),
-    );
+    try {
+      await FirebaseFirestore.instance.collection('events').add({
+        'title': title.text.trim(),
+        'description': description.text.trim(),
+        'location': location.text.trim(),
+        'activity': activity,
+        'tags': [activity],
+        'date': Timestamp.fromDate(eventStart),
+        'time': startTime.text,
+        'endTime': endTime.text,
+        'duration': '${startTime.text} – ${endTime.text}',
+        'capacity': capacity,
+        'availableSpots': capacity,
+        'participantCount': 0,
+        'minAge': age.start.round(),
+        'maxAge': age.end.round(),
+        'hostId': user.uid,
+        'hostName': user.displayName ?? user.email ?? 'Host',
+        'status': 'active',
+        'city': '',
+        'distance': '',
+        'imageUrl': '',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
-    Navigator.pop(context);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Event created successfully!')),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not create event: $e')));
+    }
   }
 }

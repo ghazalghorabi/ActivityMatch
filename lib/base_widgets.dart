@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'model.dart';
 import 'app_theme.dart';
 
@@ -75,15 +76,11 @@ class SearchSection extends StatelessWidget {
   }
 }
 
-
 // ============================================================
 // FILTER
 // ============================================================
 
-void openFilter(
-  BuildContext context, {
-  required Widget filterContent,
-}) {
+void openFilter(BuildContext context, {required Widget filterContent}) {
   showModalBottomSheet(
     context: context,
     backgroundColor: AppColors.transparent,
@@ -92,14 +89,10 @@ void openFilter(
   );
 }
 
-
 class FilterBase extends StatelessWidget {
   final Widget child;
 
-  const FilterBase({
-    super.key,
-    required this.child,
-  });
+  const FilterBase({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -121,9 +114,7 @@ class FilterBase extends StatelessWidget {
                 height: AppSizes.bottomSheetHandleHeight,
                 decoration: BoxDecoration(
                   color: Colors.white24,
-                  borderRadius: BorderRadius.circular(
-                    AppRadii.small,
-                  ),
+                  borderRadius: BorderRadius.circular(AppRadii.small),
                 ),
               ),
             ),
@@ -137,7 +128,6 @@ class FilterBase extends StatelessWidget {
     );
   }
 }
-
 
 // ============================================================
 // EVENT CARD
@@ -222,10 +212,7 @@ class EventCard extends StatelessWidget {
                     color: AppColors.overlayMedium,
                     borderRadius: AppRadii.chip,
                   ),
-                  child: Text(
-                    date,
-                    style: AppTextStyles.eventDate,
-                  ),
+                  child: Text(date, style: AppTextStyles.eventDate),
                 ),
               ),
 
@@ -236,13 +223,10 @@ class EventCard extends StatelessWidget {
                   child: IconButton(
                     onPressed: onLikePressed,
                     style: IconButton.styleFrom(
-                      backgroundColor:
-                          Colors.black.withOpacity(0.25),
+                      backgroundColor: Colors.black.withOpacity(0.25),
                     ),
                     icon: Icon(
-                      isLiked
-                          ? Icons.favorite
-                          : Icons.favorite_border,
+                      isLiked ? Icons.favorite : Icons.favorite_border,
                       color: isLiked
                           ? AppColors.primary
                           : AppColors.textPrimary,
@@ -325,7 +309,6 @@ class EventCard extends StatelessWidget {
   }
 }
 
-
 // ============================================================
 // BOTTOM NAVIGATION
 // ============================================================
@@ -348,18 +331,13 @@ class BottomNavigation extends StatelessWidget {
       minimum: AppSpacing.bottomNavigation,
       child: Container(
         height: AppSizes.navigationHeight,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         decoration: AppDecorations.navigation,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _navigationButton(Icons.home_rounded, 0),
-            _navigationButton(
-              Icons.local_activity_outlined,
-              1,
-            ),
+            _navigationButton(Icons.local_activity_outlined, 1),
 
             GestureDetector(
               onTap: onAddPressed,
@@ -378,14 +356,8 @@ class BottomNavigation extends StatelessWidget {
               ),
             ),
 
-            _navigationButton(
-              Icons.notifications_outlined,
-              2,
-            ),
-            _navigationButton(
-              Icons.person_outline_rounded,
-              3,
-            ),
+            _navigationButton(Icons.notifications_outlined, 2),
+            _navigationButton(Icons.person_outline_rounded, 3),
           ],
         ),
       ),
@@ -409,13 +381,10 @@ class BottomNavigation extends StatelessWidget {
         ),
         child: Icon(
           icon,
-          color: selected
-              ? AppColors.textDark
-              : AppColors.textSecondary,
+          color: selected ? AppColors.textDark : AppColors.textSecondary,
           size: AppSizes.navigationIcon,
         ),
       ),
     );
   }
 }
-
