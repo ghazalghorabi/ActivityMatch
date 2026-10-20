@@ -96,6 +96,26 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
           'availableSpots': availableSpots - 1,
           'participantCount': participantCount + 1,
         });
+
+        // Create a notification for the event host.
+        final hostId = data['hostId'] as String;
+        final eventTitle = data['title'] as String? ?? 'your event';
+
+        final notificationRef = firestore
+            .collection('users')
+            .doc(hostId)
+            .collection('notifications')
+            .doc();
+
+        transaction.set(notificationRef, {
+          'type': 'event_joined',
+          'title': 'New attendee!',
+          'message': '$displayName joined $eventTitle.',
+          'eventId': eventId,
+          'actorId': user.uid,
+          'read': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
       });
 
       if (!mounted) return;
@@ -240,8 +260,8 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Cancel event?'),
         content: const Text(
-          'This event will be marked as cancelled. '
-          'People will no longer be able to join it.',
+          'This event will be cancelled and all attendees '
+          'will receive a notification.',
         ),
         actions: [
           TextButton(
@@ -264,34 +284,51 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
     setState(() => isCancelling = true);
 
     try {
-      final eventRef = FirebaseFirestore.instance
-          .collection('events')
-          .doc(widget.event.id);
+      final firestore = FirebaseFirestore.instance;
+      final eventRef = firestore.collection('events').doc(widget.event.id);
 
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final snapshot = await transaction.get(eventRef);
+      // Load attendees before creating the batch.
+      final attendeesSnapshot = await eventRef.collection('attendees').get();
 
-        if (!snapshot.exists) {
-          throw Exception('Event not found.');
-        }
+      // Keep the operation within Firestore batch limits.
+      if (attendeesSnapshot.docs.length > 400) {
+        throw Exception(
+          'This event has too many attendees for '
+          'a single cancellation batch.',
+        );
+      }
 
-        final data = snapshot.data()!;
+      final batch = firestore.batch();
 
-        if (data['hostId'] != user.uid) {
-          throw Exception('Only the host can cancel this event.');
-        }
+      batch.update(eventRef, {'status': 'cancelled'});
 
-        if ((data['status'] ?? 'active') != 'active') {
-          throw Exception('This event is already cancelled.');
-        }
+      for (final attendee in attendeesSnapshot.docs) {
+        final notificationRef = firestore
+            .collection('users')
+            .doc(attendee.id)
+            .collection('notifications')
+            .doc('cancel_${widget.event.id}');
 
-        transaction.update(eventRef, {'status': 'cancelled'});
-      });
+        batch.set(notificationRef, {
+          'type': 'event_cancelled',
+          'title': 'Event cancelled',
+          'message': '${widget.event.title} has been cancelled.',
+          'eventId': widget.event.id,
+          'actorId': user.uid,
+          'read': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Event cancelled.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Event cancelled. Attendees have been notified.'),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
 

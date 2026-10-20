@@ -94,19 +94,87 @@ class _HomePageState extends State<HomePage> {
   ) {
     final events = List<ActivityEvent>.from(getFilteredEvents(sourceEvents));
 
-    if (interests.isEmpty) return events;
+    if (interests.isEmpty) {
+      events.sort((a, b) => a.date.compareTo(b.date));
+      return events;
+    }
+
+    // Connect profile interests with related event activities.
+    const relatedInterests = <String, List<String>>{
+      'running': ['running', 'sports', 'wellness'],
+      'padel': ['padel', 'sports'],
+      'coffee': ['coffee', 'food', 'food & drinks'],
+      'hiking': ['hiking', 'walk', 'wellness', 'sports'],
+      'food & drinks': [
+        'food & drinks',
+        'food',
+        'drinks',
+        'coffee',
+        'nightlife',
+      ],
+      'travel': ['travel', 'trip', 'adventure', 'hiking'],
+      'sports': ['sports', 'running', 'padel', 'gym', 'hiking'],
+      'drinks': ['drinks', 'nightlife', 'food & drinks'],
+      'gaming': ['gaming', 'games'],
+      'music': ['music', 'concert', 'live music'],
+      'art': ['art', 'painting', 'creative'],
+      'wellness': ['wellness', 'walk', 'hiking', 'yoga'],
+    };
 
     final normalizedInterests = interests
         .map((interest) => interest.trim().toLowerCase())
+        .where((interest) => interest.isNotEmpty)
         .toSet();
 
     int score(ActivityEvent event) {
-      return event.tags.where((tag) {
-        return normalizedInterests.contains(tag.trim().toLowerCase());
-      }).length;
+      final eventTags = {
+        event.activity.trim().toLowerCase(),
+        ...event.tags.map((tag) => tag.trim().toLowerCase()),
+      };
+
+      int total = 0;
+
+      for (final interest in normalizedInterests) {
+        // Exact matches are the strongest signal.
+        if (eventTags.contains(interest)) {
+          total += 10;
+        }
+
+        // Related categories also count.
+        final related = relatedInterests[interest] ?? [];
+
+        for (final tag in related) {
+          if (tag != interest && eventTags.contains(tag)) {
+            total += 5;
+          }
+        }
+      }
+
+      // Prefer events with available places.
+      if (event.availableSpots > 0) {
+        total += 3;
+      }
+
+      // Give upcoming events a small boost.
+      final daysUntilEvent = event.date.difference(DateTime.now()).inDays;
+
+      if (daysUntilEvent >= 0 && daysUntilEvent <= 7) {
+        total += 2;
+      }
+
+      return total;
     }
 
-    events.sort((a, b) => score(b).compareTo(score(a)));
+    events.sort((a, b) {
+      final scoreComparison = score(b).compareTo(score(a));
+
+      if (scoreComparison != 0) {
+        return scoreComparison;
+      }
+
+      // If scores match, show the sooner event first.
+      return a.date.compareTo(b.date);
+    });
 
     return events;
   }

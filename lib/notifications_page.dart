@@ -7,6 +7,8 @@ import 'home_page.dart';
 import 'tickets_page.dart';
 import 'profile_page.dart';
 import 'auth_guard.dart';
+import 'model.dart';
+import 'activity_details_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -21,6 +23,76 @@ class NotificationsPage extends StatefulWidget {
 
 class _NotificationsPageState extends State<NotificationsPage> {
   bool _markingAll = false;
+
+  Future<void> _openNotification(
+    String uid,
+    String notificationId,
+    Map<String, dynamic> notification,
+  ) async {
+    // Mark the notification as read.
+    if (notification['read'] != true) {
+      await _markAsRead(uid, notificationId);
+    }
+
+    if (!mounted) return;
+
+    final eventId = notification['eventId'];
+
+    if (eventId is! String || eventId.isEmpty) {
+      return;
+    }
+
+    try {
+      // Load the event from Firestore.
+      final eventDoc = await FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .get();
+
+      if (!mounted) return;
+
+      if (!eventDoc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This event no longer exists.')),
+        );
+        return;
+      }
+
+      final data = eventDoc.data()!;
+
+      final event = ActivityEvent(
+        id: eventDoc.id,
+        title: data['title'] as String? ?? 'Untitled event',
+        date: (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        location: data['location'] as String? ?? '',
+        availableSpots: (data['availableSpots'] as num?)?.toInt() ?? 0,
+        imageUrl: data['imageUrl'] as String? ?? '',
+        time: data['time'] as String? ?? '',
+        description: data['description'] as String? ?? '',
+        hostName: data['hostName'] as String? ?? 'Host',
+        duration: data['duration'] as String? ?? '',
+        minAge: (data['minAge'] as num?)?.toInt() ?? 18,
+        maxAge: (data['maxAge'] as num?)?.toInt() ?? 70,
+        capacity: (data['capacity'] as num?)?.toInt() ?? 0,
+        activity: data['activity'] as String? ?? '',
+        city: data['city'] as String? ?? '',
+        distance: data['distance'] as String? ?? '',
+        participantCount: (data['participantCount'] as num?)?.toInt() ?? 0,
+        tags: (data['tags'] as List?)?.whereType<String>().toList() ?? [],
+      );
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => EventDetailsPage(event: event)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open event: $error')));
+    }
+  }
 
   CollectionReference<Map<String, dynamic>> _notifications(String uid) =>
       FirebaseFirestore.instance
@@ -216,7 +288,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                     message: data['message'] as String? ?? '',
                                     time: _timeLabel(data['createdAt']),
                                     unread: data['read'] != true,
-                                    onTap: () => _markAsRead(user.uid, doc.id),
+                                    onTap: () => _openNotification(
+                                      user.uid,
+                                      doc.id,
+                                      data,
+                                    ),
                                   );
                                 },
                               ),

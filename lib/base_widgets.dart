@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import 'model.dart';
 import 'app_theme.dart';
 
@@ -327,44 +330,77 @@ class BottomNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      minimum: AppSpacing.bottomNavigation,
-      child: Container(
-        height: AppSizes.navigationHeight,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        decoration: AppDecorations.navigation,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _navigationButton(Icons.home_rounded, 0),
-            _navigationButton(Icons.local_activity_outlined, 1),
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, authSnapshot) {
+        final user = authSnapshot.data;
 
-            GestureDetector(
-              onTap: onAddPressed,
-              child: Container(
-                width: AppSizes.navigationButton,
-                height: AppSizes.navigationButton,
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
+        return SafeArea(
+          minimum: AppSpacing.bottomNavigation,
+          child: Container(
+            height: AppSizes.navigationHeight,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            decoration: AppDecorations.navigation,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _navigationButton(Icons.home_rounded, 0),
+
+                _navigationButton(Icons.local_activity_outlined, 1),
+
+                // CENTER ADD BUTTON
+                GestureDetector(
+                  onTap: onAddPressed,
+                  child: Container(
+                    width: AppSizes.navigationButton,
+                    height: AppSizes.navigationButton,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.add_rounded,
+                      color: AppColors.textPrimary,
+                      size: AppSizes.addIcon,
+                    ),
+                  ),
                 ),
-                child: const Icon(
-                  Icons.add_rounded,
-                  color: AppColors.textPrimary,
-                  size: AppSizes.addIcon,
-                ),
-              ),
+
+                // NOTIFICATION BELL
+                if (user == null)
+                  _navigationButton(Icons.notifications_outlined, 2)
+                else
+                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    key: ValueKey(user.uid),
+                    stream: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(user.uid)
+                        .collection('notifications')
+                        .where('read', isEqualTo: false)
+                        .limit(1)
+                        .snapshots(),
+                    builder: (context, notificationSnapshot) {
+                      final hasUnread =
+                          notificationSnapshot.data?.docs.isNotEmpty ?? false;
+
+                      return _navigationButton(
+                        Icons.notifications_outlined,
+                        2,
+                        showDot: hasUnread,
+                      );
+                    },
+                  ),
+
+                _navigationButton(Icons.person_outline_rounded, 3),
+              ],
             ),
-
-            _navigationButton(Icons.notifications_outlined, 2),
-            _navigationButton(Icons.person_outline_rounded, 3),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _navigationButton(IconData icon, int index) {
+  Widget _navigationButton(IconData icon, int index, {bool showDot = false}) {
     final selected = selectedIndex == index;
 
     return GestureDetector(
@@ -379,10 +415,30 @@ class BottomNavigation extends StatelessWidget {
               : AppColors.transparent,
           shape: BoxShape.circle,
         ),
-        child: Icon(
-          icon,
-          color: selected ? AppColors.textDark : AppColors.textSecondary,
-          size: AppSizes.navigationIcon,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              icon,
+              color: selected ? AppColors.textDark : AppColors.textSecondary,
+              size: AppSizes.navigationIcon,
+            ),
+
+            if (showDot && index == 2)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.background, width: 1.5),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
