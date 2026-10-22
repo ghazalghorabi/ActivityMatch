@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'app_bottom_navigation.dart';
@@ -8,6 +9,7 @@ import 'tickets_page.dart';
 import 'activity_details_page.dart';
 import 'model.dart';
 import 'event_data.dart';
+import 'ticket_filter.dart';
 import 'notifications_page.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,6 +27,75 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final Random _random = Random();
+  final List<String> _randomEventIds = [];
+
+  List<ActivityEvent> getRandomEvents(List<ActivityEvent> events) {
+    final byId = {for (final event in events) event.id: event};
+    final ids = byId.keys.toSet();
+    _randomEventIds.removeWhere((id) => !ids.contains(id));
+    final newIds = ids.where((id) => !_randomEventIds.contains(id)).toList()
+      ..shuffle(_random);
+    _randomEventIds.addAll(newIds);
+    return [for (final id in _randomEventIds) byId[id]!];
+  }
+
+  Widget buildEventCard(ActivityEvent event, {double? width}) {
+    return EventCard(
+      width: width,
+      height: AppSizes.eventCardHeight,
+      imageUrl: event.imageUrl.isNotEmpty
+          ? event.imageUrl
+          : 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
+      title: event.title,
+      date: event.formattedDate,
+      location: event.city.trim().isNotEmpty
+          ? event.city.trim()
+          : (event.address.trim().isNotEmpty
+              ? event.address.split(',').first.trim()
+              : event.location),
+      availableSpots: event.availableSpots,
+      showFavoriteButton: true,
+      eventId: event.id,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => EventDetailsPage(event: event)),
+        );
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  Future<void> openViewAll(String title, List<ActivityEvent> events) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AllEventsPage(title: title, events: events),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Widget buildCarousel(List<ActivityEvent> events) {
+    if (events.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+        child: Text('No events match your filters.', style: AppTextStyles.emptyMessage),
+      );
+    }
+    return SizedBox(
+      height: AppSizes.eventCardHeight,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+        scrollDirection: Axis.horizontal,
+        itemCount: events.length,
+        separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (_, index) => buildEventCard(events[index], width: 180),
+      ),
+    );
+  }
+
   ActivityEvent eventFromFirestore(
     DocumentSnapshot<Map<String, dynamic>> document,
   ) {
@@ -50,6 +121,10 @@ class _HomePageState extends State<HomePage> {
       time: data['time'] as String? ?? '',
       location: data['location'] as String? ?? '',
       city: data['city'] as String? ?? '',
+      address: data['address'] as String? ?? '',
+      placeId: data['placeId'] as String? ?? '',
+      latitude: (data['latitude'] as num?)?.toDouble(),
+      longitude: (data['longitude'] as num?)?.toDouble(),
       distance: data['distance'] as String? ?? '',
       availableSpots: (data['availableSpots'] as num?)?.toInt() ?? 0,
       participantCount: (data['participantCount'] as num?)?.toInt() ?? 0,
@@ -68,9 +143,7 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController searchController = TextEditingController();
   String selectedCategory = 'All activities';
   int selectedNavigationIndex = 0;
-  String selectedCity = 'All cities';
-  double selectedDistance = 50;
-  bool availableOnly = false;
+  final exploreFilter = TicketFilter();
   final List<String> categories = [
     'All activities',
     'Sports',
@@ -180,24 +253,30 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<ActivityEvent> getFilteredEvents(List<ActivityEvent> sourceEvents) {
+    final today = DateTime.now();
+    final currentDay = DateTime(today.year, today.month, today.day);
     return sourceEvents.where((event) {
-      final matchesCity =
-          selectedCity == 'All cities' || event.city == selectedCity;
-      final matchesCategory =
-          selectedCategory == 'All activities' ||
+      if (event.date.isBefore(currentDay)) return false;
+      final place = exploreFilter.location.trim().toLowerCase();
+      final matchesLocation = place.isEmpty ||
+          event.city.toLowerCase().contains(place) ||
+          event.location.toLowerCase().contains(place) ||
+          event.address.toLowerCase().contains(place);
+      final matchesCategory = selectedCategory == 'All activities' ||
           event.tags.contains(selectedCategory);
-      final matchesAvailability = !availableOnly || event.availableSpots > 0;
+      final matchesAvailability = !exploreFilter.availableOnly || event.availableSpots > 0;
+      final from = exploreFilter.startDate;
+      final to = exploreFilter.endDate;
+      final day = DateTime(event.date.year, event.date.month, event.date.day);
+      final matchesDate = (from == null || !day.isBefore(DateTime(from.year, from.month, from.day))) &&
+          (to == null || !day.isAfter(DateTime(to.year, to.month, to.day)));
       final search = searchController.text.trim().toLowerCase();
-      final matchesSearch =
-          search.isEmpty ||
+      final matchesSearch = search.isEmpty ||
           event.title.toLowerCase().contains(search) ||
           event.location.toLowerCase().contains(search) ||
           event.city.toLowerCase().contains(search) ||
           event.tags.any((tag) => tag.toLowerCase().contains(search));
-      return matchesCity &&
-          matchesCategory &&
-          matchesAvailability &&
-          matchesSearch;
+      return matchesLocation && matchesCategory && matchesAvailability && matchesDate && matchesSearch;
     }).toList();
   }
 
@@ -245,10 +324,10 @@ class _HomePageState extends State<HomePage> {
                 .map(eventFromFirestore)
                 .toList();
 
-            final recommendedEvents = getRecommendedEvents(
-              realEvents,
-              interests,
-            );
+            final randomEvents = getRandomEvents(realEvents);
+            final filteredEvents = getFilteredEvents(randomEvents);
+            final recommendedEvents = getRecommendedEvents(realEvents, interests);
+            final isAllActivities = selectedCategory == 'All activities';
 
             return Scaffold(
               backgroundColor: AppColors.background,
@@ -285,80 +364,76 @@ class _HomePageState extends State<HomePage> {
                             },
                           ),
                           const SizedBox(height: AppSpacing.xxl),
-                          SectionHeader(
-                            title: 'Suggested events',
-                            onViewAll: () {
-                              debugPrint('View all suggested events');
-                            },
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          FeaturedEventCard(
-                            onExplore: () {
-                              debugPrint('Explore event');
-                            },
-                          ),
-                          const SizedBox(height: AppSpacing.xl),
-                          SectionHeader(
-                            title: 'Events for you',
-                            onViewAll: () {
-                              debugPrint('View all popular events');
-                            },
-                          ),
-                          const SizedBox(height: AppSpacing.md),
+                          if (isAllActivities) ...[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Explore events', style: AppTextStyles.sectionTitle),
+                                TextButton(
+                                  onPressed: () => openViewAll('Explore events', filteredEvents),
+                                  child: const Text('View All'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                          ] else ...[
+                            Text('$selectedCategory events', style: AppTextStyles.sectionTitle),
+                            const SizedBox(height: AppSpacing.md),
+                          ],
                         ]),
                       ),
                     ),
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        height: AppSizes.eventCardHeight,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xl,
-                          ),
-                          scrollDirection: Axis.horizontal,
-                          itemCount: recommendedEvents.length,
-                          separatorBuilder: (context, index) {
-                            return const SizedBox(width: AppSpacing.sm);
-                          },
-                          itemBuilder: (context, index) {
-                            final event = recommendedEvents[index];
-                            return EventCard(
-                              width: 180,
-                              height: AppSizes.eventCardHeight,
-                              imageUrl: event.imageUrl.isNotEmpty
-                                  ? event.imageUrl
-                                  : 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
-                              title: event.title,
-                              date: event.formattedDate,
-                              location: event.location,
-                              availableSpots: event.availableSpots,
-                              showFavoriteButton: true,
-                              isLiked: EventData.likedEvents.contains(
-                                event.title,
+                    if (isAllActivities) ...[
+                      SliverToBoxAdapter(child: buildCarousel(filteredEvents)),
+                      const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                        sliver: SliverToBoxAdapter(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Recommended for you', style: AppTextStyles.sectionTitle),
+                              TextButton(
+                                onPressed: () => openViewAll('Recommended for you', recommendedEvents),
+                                child: const Text('View All'),
                               ),
-                              onLikePressed: () async {
-                                final loggedIn = await requireLogin(context);
-                                if (!loggedIn || !mounted) return;
-
-                                setState(() {
-                                  EventData.toggleLike(event);
-                                });
-                              },
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        EventDetailsPage(event: event),
-                                  ),
-                                );
-                                if (mounted) setState(() {});
-                              },
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
+                      SliverToBoxAdapter(child: buildCarousel(recommendedEvents)),
+                    ] else if (filteredEvents.isEmpty)
+                      const SliverPadding(
+                        padding: EdgeInsets.all(AppSpacing.xl),
+                        sliver: SliverToBoxAdapter(
+                          child: Text('No events match your filters.', style: AppTextStyles.emptyMessage),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                        sliver: SliverLayoutBuilder(
+                          builder: (context, constraints) {
+                            final availableWidth = constraints.crossAxisExtent;
+                            const columns = 2;
+                            final cardWidth = (availableWidth - AppSpacing.md) / 2;
+                            final cardHeight = cardWidth * 1.38;
+                            return SliverGrid(
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: columns,
+                                mainAxisSpacing: AppSpacing.md,
+                                crossAxisSpacing: AppSpacing.md,
+                                mainAxisExtent: cardHeight,
+                              ),
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) => buildEventCard(filteredEvents[index]),
+                                childCount: filteredEvents.length,
+                              ),
                             );
                           },
                         ),
                       ),
-                    ),
                     const SliverToBoxAdapter(child: SizedBox(height: 110)),
                   ],
                 ),
@@ -372,25 +447,158 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> openFilters() async {
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      backgroundColor: AppColors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return FilterSheet(
-          initialCity: selectedCity,
-          initialDistance: selectedDistance,
-          initialAvailableOnly: availableOnly,
+    final result = await showTicketFilter(context, exploreFilter, isExplore: true);
+    if (!mounted || result == null) return;
+    setState(() {});
+  }
+}
+
+// Full event list opened from either carousel on the home page.
+class AllEventsPage extends StatefulWidget {
+  final String title;
+  final List<ActivityEvent> events;
+
+  const AllEventsPage({
+    super.key,
+    required this.title,
+    required this.events,
+  });
+
+  @override
+  State<AllEventsPage> createState() => _AllEventsPageState();
+}
+
+class _AllEventsPageState extends State<AllEventsPage> {
+  final TextEditingController searchController = TextEditingController();
+  final exploreFilter = TicketFilter();
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
+
+  List<ActivityEvent> get visibleEvents {
+    final query = searchController.text.trim().toLowerCase();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return widget.events.where((event) {
+      if (event.date.isBefore(today)) return false;
+      final matchesSearch = query.isEmpty ||
+          event.title.toLowerCase().contains(query) ||
+          event.location.toLowerCase().contains(query) ||
+          event.city.toLowerCase().contains(query) ||
+          event.activity.toLowerCase().contains(query) ||
+          event.tags.any((tag) => tag.toLowerCase().contains(query));
+      final place = exploreFilter.location.trim().toLowerCase();
+      final matchesLocation = place.isEmpty ||
+          event.city.toLowerCase().contains(place) ||
+          event.location.toLowerCase().contains(place) ||
+          event.address.toLowerCase().contains(place);
+      final matchesAvailability = !exploreFilter.availableOnly || event.availableSpots > 0;
+      final from = exploreFilter.startDate;
+      final to = exploreFilter.endDate;
+      final day = DateTime(event.date.year, event.date.month, event.date.day);
+      final matchesDate = (from == null || !day.isBefore(DateTime(from.year, from.month, from.day))) &&
+          (to == null || !day.isAfter(DateTime(to.year, to.month, to.day)));
+      return matchesSearch && matchesLocation && matchesAvailability && matchesDate;
+    }).toList();
+  }
+
+  Future<void> openFilters() async {
+    final result = await showTicketFilter(context, exploreFilter, isExplore: true);
+    if (!mounted || result == null) return;
+    setState(() {});
+  }
+
+  Widget _eventCard(ActivityEvent event) {
+    return EventCard(
+      height: AppSizes.eventCardHeight,
+      imageUrl: event.imageUrl.isNotEmpty
+          ? event.imageUrl
+          : 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
+      title: event.title,
+      date: event.formattedDate,
+      location: event.city.trim().isNotEmpty
+          ? event.city.trim()
+          : (event.address.trim().isNotEmpty
+              ? event.address.split(',').first.trim()
+              : event.location),
+      availableSpots: event.availableSpots,
+      showFavoriteButton: true,
+      eventId: event.id,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => EventDetailsPage(event: event)),
         );
+        if (mounted) setState(() {});
       },
     );
-    if (result != null) {
-      setState(() {
-        selectedCity = result['city'] as String;
-        selectedDistance = result['distance'] as double;
-        availableOnly = result['availableOnly'] as bool;
-      });
-    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final events = visibleEvents;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(widget.title),
+      ),
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.xl,
+            ),
+            sliver: SliverToBoxAdapter(
+              child: SearchSection(
+                controller: searchController,
+                onFilterPressed: openFilters,
+                onSearch: (_) => setState(() {}),
+              ),
+            ),
+          ),
+          if (events.isEmpty)
+            const SliverPadding(
+              padding: EdgeInsets.all(AppSpacing.xl),
+              sliver: SliverToBoxAdapter(
+                child: Text('No events match your filters.',
+                    style: AppTextStyles.emptyMessage),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl, 0, AppSpacing.xl, 100,
+              ),
+              sliver: SliverLayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.crossAxisExtent;
+                  final cardWidth = (width - AppSpacing.md) / 2;
+                  return SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: AppSpacing.md,
+                      crossAxisSpacing: AppSpacing.md,
+                      mainAxisExtent: cardWidth * 1.38,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => _eventCard(events[index]),
+                      childCount: events.length,
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -617,144 +825,6 @@ class FeaturedEventCard extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class FilterSheet extends StatefulWidget {
-  final String initialCity;
-  final double initialDistance;
-  final bool initialAvailableOnly;
-  const FilterSheet({
-    super.key,
-    required this.initialCity,
-    required this.initialDistance,
-    required this.initialAvailableOnly,
-  });
-  @override
-  State<FilterSheet> createState() => _FilterSheetState();
-}
-
-class _FilterSheetState extends State<FilterSheet> {
-  late String selectedCity;
-  late double distance;
-  late bool availableOnly;
-  final List<String> cities = [
-    'All cities',
-    'Gothenburg',
-    'Stockholm',
-    'Malmö',
-    'Copenhagen',
-    'Oslo',
-  ];
-  @override
-  void initState() {
-    super.initState();
-    selectedCity = widget.initialCity;
-    distance = widget.initialDistance;
-    availableOnly = widget.initialAvailableOnly;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FilterBase(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Filter events', style: AppTextStyles.filterTitle),
-          const SizedBox(height: AppSpacing.xl),
-          const Text('City', style: AppTextStyles.formLabel),
-          const SizedBox(height: AppSpacing.md),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: AppRadii.field,
-              border: Border.all(color: AppColors.borderSubtle),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: selectedCity,
-                isExpanded: true,
-                dropdownColor: AppColors.surface,
-                icon: const Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  color: AppColors.textSecondary,
-                ),
-                style: AppTextStyles.bodyLarge,
-                items: cities.map((city) {
-                  return DropdownMenuItem<String>(
-                    value: city,
-                    child: Text(city),
-                  );
-                }).toList(),
-                onChanged: (city) {
-                  if (city == null) return;
-                  setState(() {
-                    selectedCity = city;
-                  });
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          Text(
-            'Distance: ${distance.round()} km',
-            style: AppTextStyles.bodyLarge,
-          ),
-          Slider(
-            value: distance,
-            min: 1,
-            max: 50,
-            divisions: 49,
-            activeColor: AppColors.primary,
-            onChanged: (value) {
-              setState(() {
-                distance = value;
-              });
-            },
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'Only events with available spots',
-              style: AppTextStyles.bodyLarge,
-            ),
-            activeColor: AppColors.primary,
-            value: availableOnly,
-            onChanged: (value) {
-              setState(() {
-                availableOnly = value;
-              });
-            },
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          SizedBox(
-            width: double.infinity,
-            height: AppSizes.primaryButtonHeight,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context, {
-                  'city': selectedCity,
-                  'distance': distance,
-                  'availableOnly': availableOnly,
-                });
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.textPrimary,
-                shape: RoundedRectangleBorder(borderRadius: AppRadii.tab),
-              ),
-              child: const Text(
-                'Apply filters',
-                style: AppTextStyles.tabSelected,
-              ),
             ),
           ),
         ],

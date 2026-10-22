@@ -459,7 +459,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
             children: [
               CustomScrollView(
                 slivers: [
-                  SliverToBoxAdapter(child: _buildHero(original)),
+                  SliverToBoxAdapter(child: _buildHero(original, imageUrl: data?['imageUrl'] as String? ?? original.imageUrl)),
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(20, 18, 20, 130),
                     sliver: SliverList(
@@ -656,14 +656,14 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
   // ==========================================================
   // HERO IMAGE
   // ==========================================================
-  Widget _buildHero(ActivityEvent event) {
+  Widget _buildHero(ActivityEvent event, {required String imageUrl}) {
     return SizedBox(
       height: 390,
       child: Stack(
         fit: StackFit.expand,
         children: [
           Image.network(
-            event.imageUrl,
+            imageUrl,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
               return Container(
@@ -1177,3 +1177,4 @@ class _InfoItem extends StatelessWidget {
     );
   }
 }
+

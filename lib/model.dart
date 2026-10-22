@@ -18,6 +18,10 @@ class ActivityEvent {
   final String activity;
   final String city;
   final String distance;
+  final String address;
+  final String placeId;
+  final double? latitude;
+  final double? longitude;
   final int participantCount;
   final List<String> tags;
   final String id;
@@ -38,6 +42,10 @@ class ActivityEvent {
     required this.activity,
     this.city = '',
     this.distance = '',
+    this.address = '',
+    this.placeId = '',
+    this.latitude,
+    this.longitude,
     this.participantCount = 0,
     this.tags = const [],
     this.id = '',

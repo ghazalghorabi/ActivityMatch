@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -8,6 +6,8 @@ import 'base_widgets.dart';
 import 'event_data.dart';
 import 'model.dart';
 import 'app_theme.dart';
+import 'event_place_field.dart';
+import 'event_cover_gallery.dart';
 
 // ============================================================
 // CREATE EVENT PAGE
@@ -23,11 +23,11 @@ class CreateEventPage extends StatefulWidget {
 class _CreateEventPageState extends State<CreateEventPage> {
   final title = TextEditingController();
   final description = TextEditingController();
-  final location = TextEditingController();
+  SelectedEventPlace? selectedPlace;
   final startTime = TextEditingController();
   final endTime = TextEditingController();
 
-  XFile? image;
+  String? selectedCoverUrl;
   DateTime? date;
   String activity = 'Padel';
   int capacity = 8;
@@ -47,7 +47,6 @@ class _CreateEventPageState extends State<CreateEventPage> {
   void dispose() {
     title.dispose();
     description.dispose();
-    location.dispose();
     startTime.dispose();
     endTime.dispose();
     super.dispose();
@@ -101,10 +100,9 @@ class _CreateEventPageState extends State<CreateEventPage> {
               ],
             ),
             _label('Location'),
-            _field(
-              location,
-              'Where is the event?',
-              icon: Icons.location_on_outlined,
+            EventPlaceField(
+              value: selectedPlace,
+              onChanged: (place) => setState(() => selectedPlace = place),
             ),
             _label('Participants'),
             Row(
@@ -157,36 +155,25 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
   Widget _photo() => GestureDetector(
     onTap: () async {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-
-      if (picked != null) {
-        setState(() => image = picked);
-      }
+      final chosen = await EventCoverGallery.choose(context, selected: selectedCoverUrl);
+      if (chosen != null && mounted) setState(() => selectedCoverUrl = chosen);
     },
     child: Container(
       height: AppSizes.photoHeight,
       width: double.infinity,
       clipBehavior: Clip.antiAlias,
       decoration: AppDecorations.input,
-      child: image != null
-          ? FutureBuilder<Uint8List>(
-              future: image!.readAsBytes(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                return Image.memory(snapshot.data!, fit: BoxFit.cover);
-              },
-            )
-          : const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.add_photo_alternate_outlined, size: 35),
-                SizedBox(height: AppSpacing.sm),
-                Text('Add photo *'),
-              ],
-            ),
+      child: selectedCoverUrl == null
+          ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.add_photo_alternate_outlined, size: 35),
+              SizedBox(height: AppSpacing.sm),
+              Text('Choose cover photo *'),
+            ])
+          : Stack(fit: StackFit.expand, children: [
+              Image.network(selectedCoverUrl!, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported_outlined))),
+              const Positioned(right: 12, bottom: 12, child: Chip(label: Text('Change cover'))),
+            ]),
     ),
   );
 
@@ -279,9 +266,10 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
     final validTime = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
 
-    if (title.text.trim().isEmpty ||
+    if (selectedCoverUrl == null ||
+        title.text.trim().isEmpty ||
         description.text.trim().isEmpty ||
-        location.text.trim().isEmpty ||
+        selectedPlace == null ||
         date == null ||
         !validTime.hasMatch(startTime.text) ||
         !validTime.hasMatch(endTime.text)) {
@@ -323,7 +311,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
       await FirebaseFirestore.instance.collection('events').add({
         'title': title.text.trim(),
         'description': description.text.trim(),
-        'location': location.text.trim(),
+        ...selectedPlace!.toFirestore(),
         'activity': activity,
         'tags': [activity],
         'date': Timestamp.fromDate(eventStart),
@@ -338,9 +326,8 @@ class _CreateEventPageState extends State<CreateEventPage> {
         'hostId': user.uid,
         'hostName': user.displayName ?? user.email ?? 'Host',
         'status': 'active',
-        'city': '',
         'distance': '',
-        'imageUrl': '',
+        'imageUrl': selectedCoverUrl!,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -359,3 +346,4 @@ class _CreateEventPageState extends State<CreateEventPage> {
     }
   }
 }
+

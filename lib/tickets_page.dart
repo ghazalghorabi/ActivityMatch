@@ -68,48 +68,24 @@ class _TicketsPageState extends State<TicketsPage> {
   Widget _buildRealEventCard(ActivityEvent event, {bool isCancelled = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (isCancelled)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.selectedTab,
-                  borderRadius: AppRadii.chip,
-                ),
-                child: const Text(
-                  'Cancelled',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+      child: EventCard(
+        imageUrl: event.imageUrl.isNotEmpty
+            ? event.imageUrl
+            : 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
+        title: event.title,
+        date: event.formattedDate,
+        location: event.location,
+        availableSpots: event.availableSpots,
+        isCancelled: isCancelled,
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => EventDetailsPage(event: event),
             ),
-          EventCard(
-            imageUrl: event.imageUrl.isNotEmpty ? event.imageUrl : 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=1200',
-            title: event.title,
-            date: event.formattedDate,
-            location: event.location,
-            availableSpots: event.availableSpots,
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => EventDetailsPage(event: event),
-                ),
-              );
-
-              if (mounted) setState(() {});
-            },
-          ),
-        ],
+          );
+          if (mounted) setState(() {});
+        },
       ),
     );
   }
@@ -208,6 +184,7 @@ class _TicketsPageState extends State<TicketsPage> {
               onTap: () {
                 setState(() {
                   selectedTicketCategory = category;
+                  if (category != 'Hosting' && ticketFilter.when == 'Cancelled') ticketFilter.when = 'All';
                 });
               },
               child: AnimatedContainer(
@@ -292,6 +269,7 @@ class _TicketsPageState extends State<TicketsPage> {
                   }
 
                   final event = _eventFromFirestore(eventSnapshot.data!);
+                  if (applyTicketFilters([event], ticketFilter).isEmpty) return const SizedBox.shrink();
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.lg),
@@ -302,19 +280,9 @@ class _TicketsPageState extends State<TicketsPage> {
                       location: event.location,
                       availableSpots: event.availableSpots,
                       showFavoriteButton: true,
+                      eventId: event.id,
                       isLiked: true,
-                      onLikePressed: () async {
-                        try {
-                          await likedDoc.reference.delete();
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Could not remove like: $e'),
-                            ),
-                          );
-                        }
-                      },
+
                       onTap: () async {
                         await Navigator.push(
                           context,
@@ -390,6 +358,7 @@ class _TicketsPageState extends State<TicketsPage> {
                   }
 
                   final event = _eventFromFirestore(eventSnapshot.data!);
+                  if (applyTicketFilters([event], ticketFilter).isEmpty) return const SizedBox.shrink();
 
                   return _buildRealEventCard(event);
                 },
@@ -433,7 +402,7 @@ class _TicketsPageState extends State<TicketsPage> {
             for (final doc in docs) doc.id: doc.data()['status'] == 'cancelled',
           };
 
-          final filteredEvents = applyTicketFilters(events, ticketFilter);
+          final filteredEvents = applyTicketFilters(events, ticketFilter, isHosting: true, cancelledEventIds: cancelledById.entries.where((entry) => entry.value).map((entry) => entry.key).toSet());
 
           if (filteredEvents.isEmpty) {
             return _emptyMessage('No hosted events yet');
@@ -474,7 +443,7 @@ class _TicketsPageState extends State<TicketsPage> {
   // ============================================================
 
   Future<void> _openFilter() async {
-    final result = await showTicketFilter(context, ticketFilter);
+    final result = await showTicketFilter(context, ticketFilter, isHosting: selectedTicketCategory == 'Hosting');
 
     if (result != null) {
       setState(() {});

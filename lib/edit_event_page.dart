@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'app_theme.dart';
+import 'event_place_field.dart';
+import 'event_cover_gallery.dart';
 
 class EditEventPage extends StatefulWidget {
   final String eventId;
@@ -16,7 +18,8 @@ class EditEventPage extends StatefulWidget {
 class _EditEventPageState extends State<EditEventPage> {
   final _title = TextEditingController();
   final _description = TextEditingController();
-  final _location = TextEditingController();
+  SelectedEventPlace? _selectedPlace;
+  String? _selectedCoverUrl;
   final _startTime = TextEditingController();
   final _endTime = TextEditingController();
 
@@ -64,7 +67,10 @@ class _EditEventPageState extends State<EditEventPage> {
       setState(() {
         _title.text = data['title'] as String? ?? '';
         _description.text = data['description'] as String? ?? '';
-        _location.text = data['location'] as String? ?? '';
+        final cover = data['imageUrl'] as String?;
+        _selectedCoverUrl = cover != null && cover.isNotEmpty ? cover : null;
+        final savedPlace = SelectedEventPlace.fromFirestore(data);
+        _selectedPlace = savedPlace.placeId.isNotEmpty ? savedPlace : null;
         _startTime.text = data['time'] as String? ?? '';
         _endTime.text = data['endTime'] as String? ?? '';
         final savedActivity = data['activity'] as String? ?? 'Padel';
@@ -92,7 +98,6 @@ class _EditEventPageState extends State<EditEventPage> {
   void dispose() {
     _title.dispose();
     _description.dispose();
-    _location.dispose();
     _startTime.dispose();
     _endTime.dispose();
     super.dispose();
@@ -123,7 +128,7 @@ class _EditEventPageState extends State<EditEventPage> {
     final endText = _endTime.text.trim();
     if (_title.text.trim().isEmpty ||
         _description.text.trim().isEmpty ||
-        _location.text.trim().isEmpty ||
+        _selectedPlace == null ||
         _date == null ||
         !timePattern.hasMatch(startText) ||
         !timePattern.hasMatch(endText)) {
@@ -178,7 +183,8 @@ class _EditEventPageState extends State<EditEventPage> {
         transaction.update(_eventRef, {
           'title': _title.text.trim(),
           'description': _description.text.trim(),
-          'location': _location.text.trim(),
+          if (_selectedCoverUrl != null) 'imageUrl': _selectedCoverUrl!,
+          ..._selectedPlace!.toFirestore(),
           'activity': _activity,
           'tags': [_activity],
           'date': Timestamp.fromDate(start),
@@ -227,6 +233,30 @@ class _EditEventPageState extends State<EditEventPage> {
     );
   }
 
+  Widget _coverPicker() => GestureDetector(
+    onTap: () async {
+      final chosen = await EventCoverGallery.choose(context, selected: _selectedCoverUrl);
+      if (chosen != null && mounted) setState(() => _selectedCoverUrl = chosen);
+    },
+    child: Container(
+      height: AppSizes.photoHeight,
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: AppDecorations.input,
+      child: _selectedCoverUrl == null
+          ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.add_photo_alternate_outlined, size: 35),
+              SizedBox(height: AppSpacing.sm),
+              Text('Choose cover photo'),
+            ])
+          : Stack(fit: StackFit.expand, children: [
+              Image.network(_selectedCoverUrl!, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported_outlined))),
+              const Positioned(right: 12, bottom: 12, child: Chip(label: Text('Change cover'))),
+            ]),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -252,6 +282,8 @@ class _EditEventPageState extends State<EditEventPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _coverPicker(),
+                  const SizedBox(height: AppSpacing.lg),
                   _field('Event title', _title),
                   const Text(
                     'Activity',
@@ -291,7 +323,22 @@ class _EditEventPageState extends State<EditEventPage> {
                       Expanded(child: _field('End time', _endTime)),
                     ],
                   ),
-                  _field('Location', _location),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Location *', style: AppTextStyles.formLabel),
+                      const SizedBox(height: AppSpacing.sm),
+                      EventPlaceField(
+                        value: _selectedPlace,
+                        onChanged: (place) => setState(() => _selectedPlace = place),
+                      ),
+                      if (_selectedPlace == null)
+                        const Padding(
+                          padding: EdgeInsets.only(top: AppSpacing.sm),
+                          child: Text('Choose a location from the suggestions (also required for older events).', style: AppTextStyles.bodySecondary),
+                        ),
+                    ]),
+                  ),
                   Row(
                     children: [
                       const Expanded(

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'model.dart';
 import 'app_theme.dart';
+import 'auth_guard.dart';
 
 const Color backgroundColor = AppColors.background;
 
@@ -148,10 +149,12 @@ class EventCard extends StatelessWidget {
   final double height;
 
   final bool showFavoriteButton;
+  final String? eventId;
   final bool isLiked;
   final VoidCallback? onLikePressed;
 
   final int? queuePosition;
+  final bool isCancelled;
 
   const EventCard({
     super.key,
@@ -164,9 +167,11 @@ class EventCard extends StatelessWidget {
     this.width,
     this.height = AppSizes.eventCardHeight,
     this.showFavoriteButton = false,
+    this.eventId,
     this.isLiked = false,
     this.onLikePressed,
     this.queuePosition,
+    this.isCancelled = false,
   });
 
   @override
@@ -219,24 +224,47 @@ class EventCard extends StatelessWidget {
                 ),
               ),
 
-              if (showFavoriteButton)
-                Positioned(
-                  right: 10,
-                  top: 8,
-                  child: IconButton(
-                    onPressed: onLikePressed,
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withOpacity(0.25),
-                    ),
-                    icon: Icon(
-                      isLiked ? Icons.favorite : Icons.favorite_border,
-                      color: isLiked
-                          ? AppColors.primary
-                          : AppColors.textPrimary,
-                      size: 21,
-                    ),
-                  ),
-                ),
+               if (showFavoriteButton)
+                 Positioned(
+                   right: 10,
+                   top: 8,
+                   child: eventId != null && eventId!.isNotEmpty
+                       ? _PersistentFavoriteButton(eventId: eventId!)
+                       : IconButton(
+                           onPressed: onLikePressed,
+                           style: IconButton.styleFrom(
+                             backgroundColor: AppColors.overlayMedium,
+                           ),
+                           icon: Icon(
+                             isLiked ? Icons.favorite : Icons.favorite_border,
+                             color: isLiked ? AppColors.primary : AppColors.textPrimary,
+                             size: 21,
+                           ),
+                         ),
+                 ),
+
+               if (isCancelled)
+                 Positioned(
+                   right: 12,
+                   top: 12,
+                   child: Container(
+                     padding: const EdgeInsets.symmetric(
+                       horizontal: 12,
+                       vertical: 7,
+                     ),
+                     decoration: BoxDecoration(
+                       color: const Color(0xFF8B3030).withOpacity(0.94),
+                       borderRadius: AppRadii.chip,
+                     ),
+                     child: const Text(
+                       'Cancelled',
+                       style: TextStyle(
+                         color: AppColors.textPrimary,
+                         fontWeight: FontWeight.w600,
+                       ),
+                     ),
+                   ),
+                 ),
 
               Positioned(
                 left: 14,
@@ -310,6 +338,66 @@ class EventCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// One Firestore-backed favorite control for every event card.
+class _PersistentFavoriteButton extends StatefulWidget {
+  final String eventId;
+  const _PersistentFavoriteButton({required this.eventId});
+
+  @override
+  State<_PersistentFavoriteButton> createState() => _PersistentFavoriteButtonState();
+}
+
+class _PersistentFavoriteButtonState extends State<_PersistentFavoriteButton> {
+  bool _saving = false;
+
+  Future<void> _toggle(bool currentlyLiked) async {
+    if (_saving) return;
+    final loggedIn = await requireLogin(context);
+    if (!mounted || !loggedIn) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    setState(() => _saving = true);
+    final ref = FirebaseFirestore.instance
+        .collection('users').doc(user.uid)
+        .collection('likedEvents').doc(widget.eventId);
+    try {
+      if (currentlyLiked) {
+        await ref.delete();
+      } else {
+        await ref.set({'likedAt': FieldValue.serverTimestamp()});
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update like: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return _button(false);
+    }
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      key: ValueKey('${user.uid}:${widget.eventId}'),
+      stream: FirebaseFirestore.instance.collection('users').doc(user.uid)
+          .collection('likedEvents').doc(widget.eventId).snapshots(),
+      builder: (context, snapshot) => _button(snapshot.data?.exists ?? false),
+    );
+  }
+
+  Widget _button(bool liked) => IconButton(
+    onPressed: _saving ? null : () => _toggle(liked),
+    style: IconButton.styleFrom(backgroundColor: AppColors.overlayMedium),
+    icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
+        color: liked ? AppColors.primary : AppColors.textPrimary, size: 21),
+  );
 }
 
 // ============================================================

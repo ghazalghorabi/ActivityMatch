@@ -1,90 +1,109 @@
 import 'package:flutter/material.dart';
-
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'app_theme.dart';
+import 'interests_page.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
-
   @override
   State<SignUpPage> createState() => _SignUpPageState();
 }
 
 class _SignUpPageState extends State<SignUpPage> {
+  final formKey = GlobalKey<FormState>();
+  final nameController = TextEditingController();
+  final locationController = TextEditingController();
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+  final Set<String> selectedInterests = {};
+  DateTime? birthDate;
   bool isLoading = false;
-  final TextEditingController nameController = TextEditingController();
-  final TextEditingController ageController = TextEditingController();
-  final TextEditingController locationController = TextEditingController();
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
+
+  String formatDate(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+
+  Future<void> pickBirthDate() async {
+    final today = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: birthDate ?? DateTime(today.year - 18, today.month, today.day),
+      firstDate: DateTime(1900),
+      lastDate: today,
+    );
+    if (picked != null && mounted) setState(() => birthDate = picked);
+  }
+
+  String? requiredValue(String? value) =>
+      value == null || value.trim().isEmpty ? 'This field is required' : null;
 
   Future<void> signUp() async {
-    final name = nameController.text.trim();
-    final age = int.tryParse(ageController.text.trim());
-    final location = locationController.text.trim();
-    final email = emailController.text.trim();
-    final password = passwordController.text;
-
-    if (name.isEmpty ||
-        age == null ||
-        age < 1 ||
-        location.isEmpty ||
-        email.isEmpty ||
-        password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all fields correctly.')),
-      );
+    if (!(formKey.currentState?.validate() ?? false)) return;
+    if (birthDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please select your date of birth.'),
+      ));
       return;
     }
-
-    if (password.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password must be at least 6 characters.'),
-        ),
-      );
-      return;
-    }
-
     setState(() => isLoading = true);
-
     try {
-      // Create a real account in Firebase Authentication.
-      final credential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: email, password: password);
-
-      // Save the user's name in their Firebase Auth profile.
-      await credential.user?.updateDisplayName(name);
-
+      final name = nameController.text.trim();
+      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text,
+      );
+      final user = credential.user!;
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'name': name,
+        'email': emailController.text.trim(),
+        'location': locationController.text.trim(),
+        'birthDate': Timestamp.fromDate(birthDate!),
+        'interests': selectedInterests.toList(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      await user.updateDisplayName(name);
       if (!mounted) return;
-
-      // Return to the login page, then back to Home.
-      // Firebase has already signed in the new user.
       Navigator.of(context).pop(true);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Could not create account.')),
-      );
-    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Could not create account.')));
+    } catch (e) {
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Something went wrong. Please try again.'),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save your profile: $e')));
     } finally {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  Widget requiredLabel(String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(label, style: AppTextStyles.formLabel),
+      Text(' *', style: AppTextStyles.formLabel.copyWith(color: AppColors.primary)),
+    ],
+  );
+
+  Widget field(String label, TextEditingController controller, String hint, {
+    TextInputType? keyboardType, bool obscure = false, String? Function(String?)? validator,
+  }) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      requiredLabel(label),
+      const SizedBox(height: AppSpacing.fieldLabelBottom),
+      TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        obscureText: obscure,
+        style: AppTextStyles.bodyLarge,
+        decoration: AppInputs.field(hint: hint),
+        validator: validator ?? requiredValue,
+      ),
+      const SizedBox(height: AppSpacing.xl),
+    ]);
   }
 
   @override
   void dispose() {
     nameController.dispose();
-    ageController.dispose();
     locationController.dispose();
     emailController.dispose();
     passwordController.dispose();
@@ -94,194 +113,62 @@ class _SignUpPageState extends State<SignUpPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF120B06),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF120B06),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Create account',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
-
+      appBar: AppBar(title: const Text('Create account', style: AppTextStyles.pageTitle)),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // NAME
-            const Text(
-              'Name',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: nameController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Enter your name',
-                hintStyle: const TextStyle(color: Colors.white54),
-                filled: true,
-                fillColor: const Color(0xFF211A15),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // AGE
-            const Text(
-              'Age',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: ageController,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Enter your age',
-                hintStyle: const TextStyle(color: Colors.white54),
-                filled: true,
-                fillColor: const Color(0xFF211A15),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // LOCATION
-            const Text(
-              'Location',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: locationController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Enter your location',
-                hintStyle: const TextStyle(color: Colors.white54),
-                filled: true,
-                fillColor: const Color(0xFF211A15),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // EMAIL
-            const Text(
-              'Email',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Enter your email',
-                hintStyle: const TextStyle(color: Colors.white54),
-                filled: true,
-                fillColor: const Color(0xFF211A15),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // PASSWORD
-            const Text(
-              'Password',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Create a password',
-                hintStyle: const TextStyle(color: Colors.white54),
-                filled: true,
-                fillColor: const Color(0xFF211A15),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 30),
-
-            // CREATE ACCOUNT BUTTON
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                onPressed: isLoading ? null : signUp,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFA33A),
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
+        padding: AppSpacing.page,
+        child: Form(
+          key: formKey,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            field('Name', nameController, 'Enter your name'),
+            requiredLabel('Date of birth'),
+            const SizedBox(height: AppSpacing.fieldLabelBottom),
+            FormField<DateTime>(
+              validator: (_) => birthDate == null ? 'Date of birth is required' : null,
+              builder: (state) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                InkWell(
+                  onTap: pickBirthDate,
+                  child: InputDecorator(
+                    decoration: AppInputs.field(hint: 'Select your date of birth', icon: Icons.calendar_today_outlined)
+                        .copyWith(errorText: state.errorText),
+                    child: Text(birthDate == null ? 'Select your date of birth' : formatDate(birthDate!),
+                        style: birthDate == null ? AppTextStyles.bodySecondary : AppTextStyles.bodyLarge),
                   ),
                 ),
-                child: const Text(
-                  'Create account',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                ),
-              ),
+              ]),
             ),
-
-            const SizedBox(height: 30),
-          ],
+            const SizedBox(height: AppSpacing.xl),
+            field('Location', locationController, 'Enter your location'),
+            field('Email', emailController, 'Enter your email',
+              keyboardType: TextInputType.emailAddress,
+              validator: (value) {
+                if (requiredValue(value) != null) return 'Email is required';
+                if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value!.trim())) return 'Enter a valid email';
+                return null;
+              },
+            ),
+            field('Password', passwordController, 'Create a password', obscure: true,
+              validator: (value) {
+                if (requiredValue(value) != null) return 'Password is required';
+                return value!.length < 6 ? 'Password must be at least 6 characters' : null;
+              },
+            ),
+            const Text('Interests', style: AppTextStyles.formLabel),
+            const SizedBox(height: AppSpacing.sm),
+            const Text('Choose interests (optional).', style: AppTextStyles.bodySecondary),
+            const SizedBox(height: AppSpacing.md),
+            InterestSelector(selected: selectedInterests, onToggle: (interest) => setState(() {
+              if (!selectedInterests.add(interest)) selectedInterests.remove(interest);
+            })),
+            const SizedBox(height: AppSpacing.xxxl),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              onPressed: isLoading ? null : signUp,
+              child: isLoading ? const CircularProgressIndicator() : const Text('Create account'),
+            )),
+            const SizedBox(height: AppSpacing.xxxl),
+          ]),
         ),
       ),
     );
   }
 }
+
