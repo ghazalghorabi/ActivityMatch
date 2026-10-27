@@ -241,6 +241,7 @@ class AppTextStyles {
     fontSize: 14,
   );
 
+
   // EVENT CARD
 
   static const TextStyle eventTitle = TextStyle(
@@ -251,25 +252,26 @@ class AppTextStyles {
 
   static const TextStyle eventDate = TextStyle(
     color: AppColors.textPrimary,
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: FontWeight.w500,
   );
 
   static const TextStyle eventLocation = TextStyle(
     color: AppColors.textSecondary,
-    fontSize: 11,
+    fontSize: 13,
   );
 
   static const TextStyle eventSpots = TextStyle(
     color: AppColors.primaryLight,
-    fontSize: 11,
+    fontSize: 13,
   );
 
   static const TextStyle eventQueue = TextStyle(
     color: AppColors.textPrimary,
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: FontWeight.w500,
   );
+
 
   // SEARCH
 
