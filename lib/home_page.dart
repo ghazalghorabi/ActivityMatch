@@ -1,3 +1,4 @@
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 
@@ -13,7 +14,6 @@ import 'ticket_filter.dart';
 import 'notifications_page.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'login_page.dart';
@@ -22,6 +22,7 @@ import 'profile_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -52,8 +53,8 @@ class _HomePageState extends State<HomePage> {
       location: event.city.trim().isNotEmpty
           ? event.city.trim()
           : (event.address.trim().isNotEmpty
-              ? event.address.split(',').first.trim()
-              : event.location),
+          ? event.address.split(',').first.trim()
+          : event.location),
       availableSpots: event.availableSpots,
       showFavoriteButton: true,
       eventId: event.id,
@@ -81,9 +82,13 @@ class _HomePageState extends State<HomePage> {
     if (events.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-        child: Text('No events match your filters.', style: AppTextStyles.emptyMessage),
+        child: Text(
+          'No events match your filters.',
+          style: AppTextStyles.emptyMessage,
+        ),
       );
     }
+
     return SizedBox(
       height: AppSizes.eventCardHeight,
       child: ListView.separated(
@@ -97,8 +102,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   ActivityEvent eventFromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> document,
-  ) {
+      DocumentSnapshot<Map<String, dynamic>> document,
+      ) {
     final data = document.data()!;
 
     final activity = data['activity'] as String? ?? 'Other';
@@ -144,6 +149,7 @@ class _HomePageState extends State<HomePage> {
   String selectedCategory = 'All activities';
   int selectedNavigationIndex = 0;
   final exploreFilter = TicketFilter();
+
   final List<String> categories = [
     'All activities',
     'Sports',
@@ -155,6 +161,7 @@ class _HomePageState extends State<HomePage> {
     'Wellness',
     'Other',
   ];
+
   @override
   void dispose() {
     searchController.dispose();
@@ -162,10 +169,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<ActivityEvent> getRecommendedEvents(
-    List<ActivityEvent> sourceEvents,
-    List<String> interests,
-  ) {
-    final events = List<ActivityEvent>.from(getFilteredEvents(sourceEvents));
+      List<ActivityEvent> sourceEvents,
+      List<String> interests,
+      String userLocation,
+      ) {
+    final city = userLocation.trim().toLowerCase();
+
+    final events = getFilteredEvents(sourceEvents).where((event) {
+      if (city.isEmpty) return false;
+
+      return event.city.trim().toLowerCase() == city;
+    }).toList();
 
     if (interests.isEmpty) {
       events.sort((a, b) => a.date.compareTo(b.date));
@@ -255,28 +269,44 @@ class _HomePageState extends State<HomePage> {
   List<ActivityEvent> getFilteredEvents(List<ActivityEvent> sourceEvents) {
     final today = DateTime.now();
     final currentDay = DateTime(today.year, today.month, today.day);
+
     return sourceEvents.where((event) {
       if (event.date.isBefore(currentDay)) return false;
+
       final place = exploreFilter.location.trim().toLowerCase();
       final matchesLocation = place.isEmpty ||
           event.city.toLowerCase().contains(place) ||
           event.location.toLowerCase().contains(place) ||
           event.address.toLowerCase().contains(place);
+
       final matchesCategory = selectedCategory == 'All activities' ||
           event.tags.contains(selectedCategory);
-      final matchesAvailability = !exploreFilter.availableOnly || event.availableSpots > 0;
+
+      final matchesAvailability =
+          !exploreFilter.availableOnly || event.availableSpots > 0;
+
       final from = exploreFilter.startDate;
       final to = exploreFilter.endDate;
       final day = DateTime(event.date.year, event.date.month, event.date.day);
-      final matchesDate = (from == null || !day.isBefore(DateTime(from.year, from.month, from.day))) &&
-          (to == null || !day.isAfter(DateTime(to.year, to.month, to.day)));
+
+      final matchesDate =
+          (from == null ||
+              !day.isBefore(DateTime(from.year, from.month, from.day))) &&
+              (to == null ||
+                  !day.isAfter(DateTime(to.year, to.month, to.day)));
+
       final search = searchController.text.trim().toLowerCase();
       final matchesSearch = search.isEmpty ||
           event.title.toLowerCase().contains(search) ||
           event.location.toLowerCase().contains(search) ||
           event.city.toLowerCase().contains(search) ||
           event.tags.any((tag) => tag.toLowerCase().contains(search));
-      return matchesLocation && matchesCategory && matchesAvailability && matchesDate && matchesSearch;
+
+      return matchesLocation &&
+          matchesCategory &&
+          matchesAvailability &&
+          matchesDate &&
+          matchesSearch;
     }).toList();
   }
 
@@ -288,12 +318,15 @@ class _HomePageState extends State<HomePage> {
       stream: user == null
           ? null
           : FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .snapshots(),
+          .collection('users')
+          .doc(user.uid)
+          .snapshots(),
       builder: (context, snapshot) {
         final data = snapshot.data?.data();
         final interests = List<String>.from(data?['interests'] ?? []);
+        final userLocation = data?['location'] as String? ?? '';
+
+        debugPrint('PROFILE LOCATION: $userLocation');
 
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance.collection('events').snapshots(),
@@ -318,15 +351,25 @@ class _HomePageState extends State<HomePage> {
             // Older events without a status field remain active.
             final realEvents = eventsSnapshot.data!.docs
                 .where((document) {
-                  final status = document.data()['status'];
-                  return status == null || status == 'active';
-                })
+              final status = document.data()['status'];
+              return status == null || status == 'active';
+            })
                 .map(eventFromFirestore)
                 .toList();
 
             final randomEvents = getRandomEvents(realEvents);
             final filteredEvents = getFilteredEvents(randomEvents);
-            final recommendedEvents = getRecommendedEvents(realEvents, interests);
+
+            final recommendedEvents = getRecommendedEvents(
+              realEvents,
+              interests,
+              userLocation,
+            );
+
+            debugPrint(
+              'RECOMMENDED CITIES: ${recommendedEvents.map((e) => e.city).toList()}',
+            );
+
             final isAllActivities = selectedCategory == 'All activities';
 
             return Scaffold(
@@ -368,16 +411,25 @@ class _HomePageState extends State<HomePage> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('Explore events', style: AppTextStyles.sectionTitle),
+                                const Text(
+                                  'Explore events',
+                                  style: AppTextStyles.sectionTitle,
+                                ),
                                 TextButton(
-                                  onPressed: () => openViewAll('Explore events', filteredEvents),
+                                  onPressed: () => openViewAll(
+                                    'Explore events',
+                                    filteredEvents,
+                                  ),
                                   child: const Text('View All'),
                                 ),
                               ],
                             ),
                             const SizedBox(height: AppSpacing.md),
                           ] else ...[
-                            Text('$selectedCategory events', style: AppTextStyles.sectionTitle),
+                            Text(
+                              '$selectedCategory events',
+                              style: AppTextStyles.sectionTitle,
+                            ),
                             const SizedBox(height: AppSpacing.md),
                           ],
                         ]),
@@ -385,60 +437,86 @@ class _HomePageState extends State<HomePage> {
                     ),
                     if (isAllActivities) ...[
                       SliverToBoxAdapter(child: buildCarousel(filteredEvents)),
-                      const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.xl),
+                      ),
                       SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xl,
+                        ),
                         sliver: SliverToBoxAdapter(
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Recommended for you', style: AppTextStyles.sectionTitle),
+                              const Text(
+                                'Recommended for you',
+                                style: AppTextStyles.sectionTitle,
+                              ),
                               TextButton(
-                                onPressed: () => openViewAll('Recommended for you', recommendedEvents),
+                                onPressed: () => openViewAll(
+                                  'Recommended for you',
+                                  recommendedEvents,
+                                ),
                                 child: const Text('View All'),
                               ),
                             ],
                           ),
                         ),
                       ),
-                      const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
-                      SliverToBoxAdapter(child: buildCarousel(recommendedEvents)),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: AppSpacing.md),
+                      ),
+                      SliverToBoxAdapter(
+                        child: buildCarousel(recommendedEvents),
+                      ),
                     ] else if (filteredEvents.isEmpty)
                       const SliverPadding(
                         padding: EdgeInsets.all(AppSpacing.xl),
                         sliver: SliverToBoxAdapter(
-                          child: Text('No events match your filters.', style: AppTextStyles.emptyMessage),
+                          child: Text(
+                            'No events match your filters.',
+                            style: AppTextStyles.emptyMessage,
+                          ),
                         ),
                       )
                     else
                       SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xl,
+                        ),
                         sliver: SliverLayoutBuilder(
                           builder: (context, constraints) {
                             final availableWidth = constraints.crossAxisExtent;
                             const columns = 2;
-                            final cardWidth = (availableWidth - AppSpacing.md) / 2;
+                            final cardWidth =
+                                (availableWidth - AppSpacing.md) / 2;
                             final cardHeight = cardWidth * 1.38;
+
                             return SliverGrid(
-                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: columns,
                                 mainAxisSpacing: AppSpacing.md,
                                 crossAxisSpacing: AppSpacing.md,
                                 mainAxisExtent: cardHeight,
                               ),
                               delegate: SliverChildBuilderDelegate(
-                                (context, index) => buildEventCard(filteredEvents[index]),
+                                    (context, index) =>
+                                    buildEventCard(filteredEvents[index]),
                                 childCount: filteredEvents.length,
                               ),
                             );
                           },
                         ),
                       ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                    const SliverToBoxAdapter(
+                      child: SizedBox(height: 110),
+                    ),
                   ],
                 ),
               ),
-              bottomNavigationBar: const AppBottomNavigation(selectedIndex: 0),
+              bottomNavigationBar:
+              const AppBottomNavigation(selectedIndex: 0),
             );
           },
         );
@@ -447,7 +525,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> openFilters() async {
-    final result = await showTicketFilter(context, exploreFilter, isExplore: true);
+    final result =
+    await showTicketFilter(context, exploreFilter, isExplore: true);
     if (!mounted || result == null) return;
     setState(() {});
   }
@@ -482,31 +561,46 @@ class _AllEventsPageState extends State<AllEventsPage> {
     final query = searchController.text.trim().toLowerCase();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+
     return widget.events.where((event) {
       if (event.date.isBefore(today)) return false;
+
       final matchesSearch = query.isEmpty ||
           event.title.toLowerCase().contains(query) ||
           event.location.toLowerCase().contains(query) ||
           event.city.toLowerCase().contains(query) ||
           event.activity.toLowerCase().contains(query) ||
           event.tags.any((tag) => tag.toLowerCase().contains(query));
+
       final place = exploreFilter.location.trim().toLowerCase();
       final matchesLocation = place.isEmpty ||
           event.city.toLowerCase().contains(place) ||
           event.location.toLowerCase().contains(place) ||
           event.address.toLowerCase().contains(place);
-      final matchesAvailability = !exploreFilter.availableOnly || event.availableSpots > 0;
+
+      final matchesAvailability =
+          !exploreFilter.availableOnly || event.availableSpots > 0;
+
       final from = exploreFilter.startDate;
       final to = exploreFilter.endDate;
       final day = DateTime(event.date.year, event.date.month, event.date.day);
-      final matchesDate = (from == null || !day.isBefore(DateTime(from.year, from.month, from.day))) &&
-          (to == null || !day.isAfter(DateTime(to.year, to.month, to.day)));
-      return matchesSearch && matchesLocation && matchesAvailability && matchesDate;
+
+      final matchesDate =
+          (from == null ||
+              !day.isBefore(DateTime(from.year, from.month, from.day))) &&
+              (to == null ||
+                  !day.isAfter(DateTime(to.year, to.month, to.day)));
+
+      return matchesSearch &&
+          matchesLocation &&
+          matchesAvailability &&
+          matchesDate;
     }).toList();
   }
 
   Future<void> openFilters() async {
-    final result = await showTicketFilter(context, exploreFilter, isExplore: true);
+    final result =
+    await showTicketFilter(context, exploreFilter, isExplore: true);
     if (!mounted || result == null) return;
     setState(() {});
   }
@@ -522,8 +616,8 @@ class _AllEventsPageState extends State<AllEventsPage> {
       location: event.city.trim().isNotEmpty
           ? event.city.trim()
           : (event.address.trim().isNotEmpty
-              ? event.address.split(',').first.trim()
-              : event.location),
+          ? event.address.split(',').first.trim()
+          : event.location),
       availableSpots: event.availableSpots,
       showFavoriteButton: true,
       eventId: event.id,
@@ -540,6 +634,7 @@ class _AllEventsPageState extends State<AllEventsPage> {
   @override
   Widget build(BuildContext context) {
     final events = visibleEvents;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -554,7 +649,10 @@ class _AllEventsPageState extends State<AllEventsPage> {
         slivers: [
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.xl,
+              AppSpacing.xl,
+              AppSpacing.lg,
+              AppSpacing.xl,
+              AppSpacing.xl,
             ),
             sliver: SliverToBoxAdapter(
               child: SearchSection(
@@ -568,28 +666,35 @@ class _AllEventsPageState extends State<AllEventsPage> {
             const SliverPadding(
               padding: EdgeInsets.all(AppSpacing.xl),
               sliver: SliverToBoxAdapter(
-                child: Text('No events match your filters.',
-                    style: AppTextStyles.emptyMessage),
+                child: Text(
+                  'No events match your filters.',
+                  style: AppTextStyles.emptyMessage,
+                ),
               ),
             )
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl, 0, AppSpacing.xl, 100,
+                AppSpacing.xl,
+                0,
+                AppSpacing.xl,
+                100,
               ),
               sliver: SliverLayoutBuilder(
                 builder: (context, constraints) {
                   final width = constraints.crossAxisExtent;
                   final cardWidth = (width - AppSpacing.md) / 2;
+
                   return SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                    SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       mainAxisSpacing: AppSpacing.md,
                       crossAxisSpacing: AppSpacing.md,
                       mainAxisExtent: cardWidth * 1.38,
                     ),
                     delegate: SliverChildBuilderDelegate(
-                      (context, index) => _eventCard(events[index]),
+                          (context, index) => _eventCard(events[index]),
                       childCount: events.length,
                     ),
                   );
@@ -610,7 +715,10 @@ class Header extends StatelessWidget {
     return Column(
       children: [
         const Center(
-          child: Text('ActivityMatch', style: AppTextStyles.pageTitle),
+          child: Text(
+            'ActivityMatch',
+            style: AppTextStyles.pageTitle,
+          ),
         ),
         const SizedBox(height: 12),
         StreamBuilder<User?>(
@@ -621,9 +729,9 @@ class Header extends StatelessWidget {
             if (user == null) {
               return TextButton(
                 onPressed: () {
-                  Navigator.of(
-                    context,
-                  ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const LoginPage()),
+                  );
                 },
                 child: const Text('Log in / Sign up'),
               );
@@ -656,12 +764,14 @@ class CategorySelector extends StatelessWidget {
   final List<String> categories;
   final String selectedCategory;
   final ValueChanged<String> onSelected;
+
   const CategorySelector({
     super.key,
     required this.categories,
     required this.selectedCategory,
     required this.onSelected,
   });
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -681,6 +791,7 @@ class CategorySelector extends StatelessWidget {
         itemBuilder: (context, index) {
           final category = categories[index];
           final bool isSelected = category == selectedCategory;
+
           return GestureDetector(
             onTap: () {
               onSelected(category);
@@ -712,19 +823,26 @@ class CategorySelector extends StatelessWidget {
 class SectionHeader extends StatelessWidget {
   final String title;
   final VoidCallback onViewAll;
+
   const SectionHeader({
     super.key,
     required this.title,
     required this.onViewAll,
   });
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(title, style: AppTextStyles.sectionTitle)),
+        Expanded(
+          child: Text(title, style: AppTextStyles.sectionTitle),
+        ),
         TextButton(
           onPressed: onViewAll,
-          child: const Text('View All', style: AppTextStyles.filterChip),
+          child: const Text(
+            'View All',
+            style: AppTextStyles.filterChip,
+          ),
         ),
       ],
     );
@@ -733,7 +851,9 @@ class SectionHeader extends StatelessWidget {
 
 class FeaturedEventCard extends StatelessWidget {
   final VoidCallback onExplore;
+
   const FeaturedEventCard({super.key, required this.onExplore});
+
   @override
   Widget build(BuildContext context) {
     return Container(
