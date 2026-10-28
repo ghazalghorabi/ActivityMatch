@@ -1,5 +1,5 @@
-
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import 'app_bottom_navigation.dart';
@@ -19,6 +19,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'login_page.dart';
 import 'auth_guard.dart';
 import 'profile_page.dart';
+import 'event_categories.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -53,8 +54,8 @@ class _HomePageState extends State<HomePage> {
       location: event.city.trim().isNotEmpty
           ? event.city.trim()
           : (event.address.trim().isNotEmpty
-          ? event.address.split(',').first.trim()
-          : event.location),
+                ? event.address.split(',').first.trim()
+                : event.location),
       availableSpots: event.availableSpots,
       showFavoriteButton: true,
       eventId: event.id,
@@ -102,22 +103,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   ActivityEvent eventFromFirestore(
-      DocumentSnapshot<Map<String, dynamic>> document,
-      ) {
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
     final data = document.data()!;
+    final savedCategory =
+        data['category'] as String? ?? data['activity'] as String? ?? 'Other';
 
-    final activity = data['activity'] as String? ?? 'Other';
-    final category = switch (activity) {
-      'Padel' || 'Running' || 'Gym' => 'Sports',
-      'Drinks' => 'Nightlife',
-      'Coffee' => 'Food',
-      'Gaming' => 'Games',
-      'Walk' => 'Wellness',
-      _ => 'Other',
-    };
+    final category = EventCategories.all.contains(savedCategory)
+        ? savedCategory
+        : 'Other';
 
-    final savedTags = List<String>.from(data['tags'] ?? []);
-    final tags = <String>{category, activity, ...savedTags}.toList();
+    final tags = <String>[category];
 
     return ActivityEvent(
       id: document.id,
@@ -139,7 +135,7 @@ class _HomePageState extends State<HomePage> {
       maxAge: (data['maxAge'] as num?)?.toInt() ?? 70,
       hostName: data['hostName'] as String? ?? 'Host',
       tags: tags,
-      activity: activity,
+      activity: category,
       description: data['description'] as String? ?? '',
       imageUrl: data['imageUrl'] as String? ?? '',
     );
@@ -150,17 +146,7 @@ class _HomePageState extends State<HomePage> {
   int selectedNavigationIndex = 0;
   final exploreFilter = TicketFilter();
 
-  final List<String> categories = [
-    'All activities',
-    'Sports',
-    'Food',
-    'Music',
-    'Art',
-    'Nightlife',
-    'Games',
-    'Wellness',
-    'Other',
-  ];
+  final List<String> categories = ['All activities', ...EventCategories.all];
 
   @override
   void dispose() {
@@ -169,80 +155,32 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<ActivityEvent> getRecommendedEvents(
-      List<ActivityEvent> sourceEvents,
-      List<String> interests,
-      String userLocation,
-      ) {
+    List<ActivityEvent> sourceEvents,
+    List<String> interests,
+    String userLocation,
+  ) {
     final city = userLocation.trim().toLowerCase();
 
     final events = getFilteredEvents(sourceEvents).where((event) {
       if (city.isEmpty) return false;
-
       return event.city.trim().toLowerCase() == city;
     }).toList();
 
-    if (interests.isEmpty) {
-      events.sort((a, b) => a.date.compareTo(b.date));
-      return events;
-    }
-
-    // Connect profile interests with related event activities.
-    const relatedInterests = <String, List<String>>{
-      'running': ['running', 'sports', 'wellness'],
-      'padel': ['padel', 'sports'],
-      'coffee': ['coffee', 'food', 'food & drinks'],
-      'hiking': ['hiking', 'walk', 'wellness', 'sports'],
-      'food & drinks': [
-        'food & drinks',
-        'food',
-        'drinks',
-        'coffee',
-        'nightlife',
-      ],
-      'travel': ['travel', 'trip', 'adventure', 'hiking'],
-      'sports': ['sports', 'running', 'padel', 'gym', 'hiking'],
-      'drinks': ['drinks', 'nightlife', 'food & drinks'],
-      'gaming': ['gaming', 'games'],
-      'music': ['music', 'concert', 'live music'],
-      'art': ['art', 'painting', 'creative'],
-      'wellness': ['wellness', 'walk', 'hiking', 'yoga'],
-    };
-
-    final normalizedInterests = interests
-        .map((interest) => interest.trim().toLowerCase())
-        .where((interest) => interest.isNotEmpty)
+    final selectedInterests = interests
+        .where((interest) => EventCategories.all.contains(interest))
         .toSet();
 
     int score(ActivityEvent event) {
-      final eventTags = {
-        event.activity.trim().toLowerCase(),
-        ...event.tags.map((tag) => tag.trim().toLowerCase()),
-      };
-
       int total = 0;
 
-      for (final interest in normalizedInterests) {
-        // Exact matches are the strongest signal.
-        if (eventTags.contains(interest)) {
-          total += 10;
-        }
-
-        // Related categories also count.
-        final related = relatedInterests[interest] ?? [];
-
-        for (final tag in related) {
-          if (tag != interest && eventTags.contains(tag)) {
-            total += 5;
-          }
-        }
+      if (selectedInterests.contains(event.activity)) {
+        total += 10;
       }
 
-      // Prefer events with available places.
       if (event.availableSpots > 0) {
         total += 3;
       }
 
-      // Give upcoming events a small boost.
       final daysUntilEvent = event.date.difference(DateTime.now()).inDays;
 
       if (daysUntilEvent >= 0 && daysUntilEvent <= 7) {
@@ -259,7 +197,6 @@ class _HomePageState extends State<HomePage> {
         return scoreComparison;
       }
 
-      // If scores match, show the sooner event first.
       return a.date.compareTo(b.date);
     });
 
@@ -274,12 +211,14 @@ class _HomePageState extends State<HomePage> {
       if (event.date.isBefore(currentDay)) return false;
 
       final place = exploreFilter.location.trim().toLowerCase();
-      final matchesLocation = place.isEmpty ||
+      final matchesLocation =
+          place.isEmpty ||
           event.city.toLowerCase().contains(place) ||
           event.location.toLowerCase().contains(place) ||
           event.address.toLowerCase().contains(place);
 
-      final matchesCategory = selectedCategory == 'All activities' ||
+      final matchesCategory =
+          selectedCategory == 'All activities' ||
           event.tags.contains(selectedCategory);
 
       final matchesAvailability =
@@ -292,11 +231,11 @@ class _HomePageState extends State<HomePage> {
       final matchesDate =
           (from == null ||
               !day.isBefore(DateTime(from.year, from.month, from.day))) &&
-              (to == null ||
-                  !day.isAfter(DateTime(to.year, to.month, to.day)));
+          (to == null || !day.isAfter(DateTime(to.year, to.month, to.day)));
 
       final search = searchController.text.trim().toLowerCase();
-      final matchesSearch = search.isEmpty ||
+      final matchesSearch =
+          search.isEmpty ||
           event.title.toLowerCase().contains(search) ||
           event.location.toLowerCase().contains(search) ||
           event.city.toLowerCase().contains(search) ||
@@ -318,9 +257,9 @@ class _HomePageState extends State<HomePage> {
       stream: user == null
           ? null
           : FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .snapshots(),
+                .collection('users')
+                .doc(user.uid)
+                .snapshots(),
       builder: (context, snapshot) {
         final data = snapshot.data?.data();
         final interests = List<String>.from(data?['interests'] ?? []);
@@ -351,9 +290,9 @@ class _HomePageState extends State<HomePage> {
             // Older events without a status field remain active.
             final realEvents = eventsSnapshot.data!.docs
                 .where((document) {
-              final status = document.data()['status'];
-              return status == null || status == 'active';
-            })
+                  final status = document.data()['status'];
+                  return status == null || status == 'active';
+                })
                 .map(eventFromFirestore)
                 .toList();
 
@@ -494,14 +433,14 @@ class _HomePageState extends State<HomePage> {
 
                             return SliverGrid(
                               gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: columns,
-                                mainAxisSpacing: AppSpacing.md,
-                                crossAxisSpacing: AppSpacing.md,
-                                mainAxisExtent: cardHeight,
-                              ),
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: columns,
+                                    mainAxisSpacing: AppSpacing.md,
+                                    crossAxisSpacing: AppSpacing.md,
+                                    mainAxisExtent: cardHeight,
+                                  ),
                               delegate: SliverChildBuilderDelegate(
-                                    (context, index) =>
+                                (context, index) =>
                                     buildEventCard(filteredEvents[index]),
                                 childCount: filteredEvents.length,
                               ),
@@ -509,14 +448,11 @@ class _HomePageState extends State<HomePage> {
                           },
                         ),
                       ),
-                    const SliverToBoxAdapter(
-                      child: SizedBox(height: 110),
-                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 110)),
                   ],
                 ),
               ),
-              bottomNavigationBar:
-              const AppBottomNavigation(selectedIndex: 0),
+              bottomNavigationBar: const AppBottomNavigation(selectedIndex: 0),
             );
           },
         );
@@ -525,8 +461,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> openFilters() async {
-    final result =
-    await showTicketFilter(context, exploreFilter, isExplore: true);
+    final result = await showTicketFilter(
+      context,
+      exploreFilter,
+      isExplore: true,
+    );
     if (!mounted || result == null) return;
     setState(() {});
   }
@@ -537,11 +476,7 @@ class AllEventsPage extends StatefulWidget {
   final String title;
   final List<ActivityEvent> events;
 
-  const AllEventsPage({
-    super.key,
-    required this.title,
-    required this.events,
-  });
+  const AllEventsPage({super.key, required this.title, required this.events});
 
   @override
   State<AllEventsPage> createState() => _AllEventsPageState();
@@ -565,7 +500,8 @@ class _AllEventsPageState extends State<AllEventsPage> {
     return widget.events.where((event) {
       if (event.date.isBefore(today)) return false;
 
-      final matchesSearch = query.isEmpty ||
+      final matchesSearch =
+          query.isEmpty ||
           event.title.toLowerCase().contains(query) ||
           event.location.toLowerCase().contains(query) ||
           event.city.toLowerCase().contains(query) ||
@@ -573,7 +509,8 @@ class _AllEventsPageState extends State<AllEventsPage> {
           event.tags.any((tag) => tag.toLowerCase().contains(query));
 
       final place = exploreFilter.location.trim().toLowerCase();
-      final matchesLocation = place.isEmpty ||
+      final matchesLocation =
+          place.isEmpty ||
           event.city.toLowerCase().contains(place) ||
           event.location.toLowerCase().contains(place) ||
           event.address.toLowerCase().contains(place);
@@ -588,8 +525,7 @@ class _AllEventsPageState extends State<AllEventsPage> {
       final matchesDate =
           (from == null ||
               !day.isBefore(DateTime(from.year, from.month, from.day))) &&
-              (to == null ||
-                  !day.isAfter(DateTime(to.year, to.month, to.day)));
+          (to == null || !day.isAfter(DateTime(to.year, to.month, to.day)));
 
       return matchesSearch &&
           matchesLocation &&
@@ -599,8 +535,11 @@ class _AllEventsPageState extends State<AllEventsPage> {
   }
 
   Future<void> openFilters() async {
-    final result =
-    await showTicketFilter(context, exploreFilter, isExplore: true);
+    final result = await showTicketFilter(
+      context,
+      exploreFilter,
+      isExplore: true,
+    );
     if (!mounted || result == null) return;
     setState(() {});
   }
@@ -616,8 +555,8 @@ class _AllEventsPageState extends State<AllEventsPage> {
       location: event.city.trim().isNotEmpty
           ? event.city.trim()
           : (event.address.trim().isNotEmpty
-          ? event.address.split(',').first.trim()
-          : event.location),
+                ? event.address.split(',').first.trim()
+                : event.location),
       availableSpots: event.availableSpots,
       showFavoriteButton: true,
       eventId: event.id,
@@ -686,15 +625,14 @@ class _AllEventsPageState extends State<AllEventsPage> {
                   final cardWidth = (width - AppSpacing.md) / 2;
 
                   return SliverGrid(
-                    gridDelegate:
-                    SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       mainAxisSpacing: AppSpacing.md,
                       crossAxisSpacing: AppSpacing.md,
                       mainAxisExtent: cardWidth * 1.38,
                     ),
                     delegate: SliverChildBuilderDelegate(
-                          (context, index) => _eventCard(events[index]),
+                      (context, index) => _eventCard(events[index]),
                       childCount: events.length,
                     ),
                   );
@@ -715,10 +653,7 @@ class Header extends StatelessWidget {
     return Column(
       children: [
         const Center(
-          child: Text(
-            'ActivityMatch',
-            style: AppTextStyles.pageTitle,
-          ),
+          child: Text('ActivityMatch', style: AppTextStyles.pageTitle),
         ),
         const SizedBox(height: 12),
         StreamBuilder<User?>(
@@ -729,9 +664,9 @@ class Header extends StatelessWidget {
             if (user == null) {
               return TextButton(
                 onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const LoginPage()),
-                  );
+                  Navigator.of(
+                    context,
+                  ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
                 },
                 child: const Text('Log in / Sign up'),
               );
@@ -834,15 +769,10 @@ class SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-          child: Text(title, style: AppTextStyles.sectionTitle),
-        ),
+        Expanded(child: Text(title, style: AppTextStyles.sectionTitle)),
         TextButton(
           onPressed: onViewAll,
-          child: const Text(
-            'View All',
-            style: AppTextStyles.filterChip,
-          ),
+          child: const Text('View All', style: AppTextStyles.filterChip),
         ),
       ],
     );

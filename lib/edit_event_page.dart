@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'app_theme.dart';
 import 'event_place_field.dart';
 import 'event_cover_gallery.dart';
+import 'event_categories.dart';
 
 class EditEventPage extends StatefulWidget {
   final String eventId;
@@ -23,17 +24,9 @@ class _EditEventPageState extends State<EditEventPage> {
   final _startTime = TextEditingController();
   final _endTime = TextEditingController();
 
-  final _activities = const [
-    'Padel',
-    'Running',
-    'Drinks',
-    'Coffee',
-    'Walk',
-    'Gym',
-    'Gaming',
-  ];
+  final List<String> _activities = EventCategories.all;
 
-  String _activity = 'Padel';
+  String _activity = 'Sports';
   DateTime? _date;
   int _capacity = 1;
   RangeValues _age = const RangeValues(18, 70);
@@ -73,10 +66,14 @@ class _EditEventPageState extends State<EditEventPage> {
         _selectedPlace = savedPlace.placeId.isNotEmpty ? savedPlace : null;
         _startTime.text = data['time'] as String? ?? '';
         _endTime.text = data['endTime'] as String? ?? '';
-        final savedActivity = data['activity'] as String? ?? 'Padel';
-        _activity = _activities.contains(savedActivity)
-            ? savedActivity
-            : 'Padel';
+        final savedCategory =
+            data['category'] as String? ??
+            data['activity'] as String? ??
+            'Other';
+
+        _activity = EventCategories.all.contains(savedCategory)
+            ? savedCategory
+            : 'Other';
         _date = (data['date'] as Timestamp?)?.toDate();
         _capacity = (data['capacity'] as num?)?.toInt() ?? 1;
         _age = RangeValues(
@@ -186,6 +183,7 @@ class _EditEventPageState extends State<EditEventPage> {
           if (_selectedCoverUrl != null) 'imageUrl': _selectedCoverUrl!,
           ..._selectedPlace!.toFirestore(),
           'activity': _activity,
+          'category': _activity,
           'tags': [_activity],
           'date': Timestamp.fromDate(start),
           'time': startText,
@@ -235,7 +233,10 @@ class _EditEventPageState extends State<EditEventPage> {
 
   Widget _coverPicker() => GestureDetector(
     onTap: () async {
-      final chosen = await EventCoverGallery.choose(context, selected: _selectedCoverUrl);
+      final chosen = await EventCoverGallery.choose(
+        context,
+        selected: _selectedCoverUrl,
+      );
       if (chosen != null && mounted) setState(() => _selectedCoverUrl = chosen);
     },
     child: Container(
@@ -244,16 +245,31 @@ class _EditEventPageState extends State<EditEventPage> {
       clipBehavior: Clip.antiAlias,
       decoration: AppDecorations.input,
       child: _selectedCoverUrl == null
-          ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.add_photo_alternate_outlined, size: 35),
-              SizedBox(height: AppSpacing.sm),
-              Text('Choose cover photo'),
-            ])
-          : Stack(fit: StackFit.expand, children: [
-              Image.network(_selectedCoverUrl!, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported_outlined))),
-              const Positioned(right: 12, bottom: 12, child: Chip(label: Text('Change cover'))),
-            ]),
+          ? const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add_photo_alternate_outlined, size: 35),
+                SizedBox(height: AppSpacing.sm),
+                Text('Choose cover photo'),
+              ],
+            )
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  _selectedCoverUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(Icons.image_not_supported_outlined),
+                  ),
+                ),
+                const Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: Chip(label: Text('Change cover')),
+                ),
+              ],
+            ),
     ),
   );
 
@@ -286,7 +302,7 @@ class _EditEventPageState extends State<EditEventPage> {
                   const SizedBox(height: AppSpacing.lg),
                   _field('Event title', _title),
                   const Text(
-                    'Activity',
+                    'Category',
                     style: TextStyle(color: AppColors.textPrimary),
                   ),
                   Wrap(
@@ -325,19 +341,29 @@ class _EditEventPageState extends State<EditEventPage> {
                   ),
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Location *', style: AppTextStyles.formLabel),
-                      const SizedBox(height: AppSpacing.sm),
-                      EventPlaceField(
-                        value: _selectedPlace,
-                        onChanged: (place) => setState(() => _selectedPlace = place),
-                      ),
-                      if (_selectedPlace == null)
-                        const Padding(
-                          padding: EdgeInsets.only(top: AppSpacing.sm),
-                          child: Text('Choose a location from the suggestions (also required for older events).', style: AppTextStyles.bodySecondary),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Location *',
+                          style: AppTextStyles.formLabel,
                         ),
-                    ]),
+                        const SizedBox(height: AppSpacing.sm),
+                        EventPlaceField(
+                          value: _selectedPlace,
+                          onChanged: (place) =>
+                              setState(() => _selectedPlace = place),
+                        ),
+                        if (_selectedPlace == null)
+                          const Padding(
+                            padding: EdgeInsets.only(top: AppSpacing.sm),
+                            child: Text(
+                              'Choose a location from the suggestions (also required for older events).',
+                              style: AppTextStyles.bodySecondary,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                   Row(
                     children: [

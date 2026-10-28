@@ -459,7 +459,13 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
             children: [
               CustomScrollView(
                 slivers: [
-                  SliverToBoxAdapter(child: _buildHero(original, imageUrl: data?['imageUrl'] as String? ?? original.imageUrl)),
+                  SliverToBoxAdapter(
+                    child: _buildHero(
+                      original,
+                      imageUrl:
+                          data?['imageUrl'] as String? ?? original.imageUrl,
+                    ),
+                  ),
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(20, 18, 20, 130),
                     sliver: SliverList(
@@ -1177,4 +1183,3 @@ class _InfoItem extends StatelessWidget {
     );
   }
 }
-

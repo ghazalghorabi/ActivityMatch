@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -27,10 +26,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
   bool _markingAll = false;
 
   Future<void> _openNotification(
-      String uid,
-      String notificationId,
-      Map<String, dynamic> notification,
-      ) async {
+    String uid,
+    String notificationId,
+    Map<String, dynamic> notification,
+  ) async {
     if (notification['read'] != true) {
       await _markAsRead(uid, notificationId);
     }
@@ -88,9 +87,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open event: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open event: $error')));
     }
   }
 
@@ -112,9 +111,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _markAllAsRead(
-      String uid,
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-      ) async {
+    String uid,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
     if (_markingAll) return;
     final unread = docs.where((doc) => doc.data()['read'] != true).toList();
     if (unread.isEmpty) return;
@@ -178,136 +177,133 @@ class _NotificationsPageState extends State<NotificationsPage> {
       body: SafeArea(
         child: user == null
             ? const Center(
-          child: Text(
-            'Log in to see your notifications.',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-        )
+                child: Text(
+                  'Log in to see your notifications.',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              )
             : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _notifications(user.uid)
-              .orderBy('createdAt', descending: true)
-              .limit(100)
-              .snapshots(),
-          builder: (context, snapshot) {
-            final docs = snapshot.data?.docs ?? [];
-            final unreadCount = docs
-                .where((doc) => doc.data()['read'] != true)
-                .length;
+                stream: _notifications(user.uid)
+                    .orderBy('createdAt', descending: true)
+                    .limit(100)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? [];
+                  final unreadCount = docs
+                      .where((doc) => doc.data()['read'] != true)
+                      .length;
 
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-                  child: Row(
+                  return Column(
                     children: [
-                      const Expanded(
-                        child: Text(
-                          'Notifications',
-                          style: AppTextStyles.pageTitle,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Notifications',
+                                style: AppTextStyles.pageTitle,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: unreadCount == 0 || _markingAll
+                                  ? null
+                                  : () => _markAllAsRead(user.uid, docs),
+                              style: TextButton.styleFrom(
+                                backgroundColor: NotificationsPage.cardColor,
+                                foregroundColor: AppColors.textPrimary,
+                              ),
+                              child: Text(
+                                _markingAll
+                                    ? 'Updating...'
+                                    : 'Mark all as read',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      TextButton(
-                        onPressed: unreadCount == 0 || _markingAll
-                            ? null
-                            : () => _markAllAsRead(user.uid, docs),
-                        style: TextButton.styleFrom(
-                          backgroundColor: NotificationsPage.cardColor,
-                          foregroundColor: AppColors.textPrimary,
-                        ),
-                        child: Text(
-                          _markingAll
-                              ? 'Updating...'
-                              : 'Mark all as read',
-                          style: const TextStyle(fontSize: 12),
-                        ),
+                      Expanded(
+                        child: snapshot.hasError
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    'Could not load notifications:\n${snapshot.error}',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : !snapshot.hasData
+                            ? const Center(child: CircularProgressIndicator())
+                            : docs.isEmpty
+                            ? const Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.notifications_none,
+                                      color: AppColors.primary,
+                                      size: 52,
+                                    ),
+                                    SizedBox(height: 12),
+                                    Text(
+                                      'No notifications yet',
+                                      style: TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    SizedBox(height: 6),
+                                    Text(
+                                      'Updates about your activities will appear here.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  24,
+                                  8,
+                                  24,
+                                  24,
+                                ),
+                                itemCount: docs.length,
+                                itemBuilder: (context, index) {
+                                  final doc = docs[index];
+                                  final data = doc.data();
+
+                                  return NotificationCard(
+                                    icon: _iconForType(
+                                      data['type'] as String? ?? '',
+                                    ),
+                                    title:
+                                        data['title'] as String? ??
+                                        'Activity update',
+                                    message: data['message'] as String? ?? '',
+                                    time: _timeLabel(data['createdAt']),
+                                    unread: data['read'] != true,
+                                    onTap: () => _openNotification(
+                                      user.uid,
+                                      doc.id,
+                                      data,
+                                    ),
+                                  );
+                                },
+                              ),
                       ),
                     ],
-                  ),
-                ),
-                Expanded(
-                  child: snapshot.hasError
-                      ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Could not load notifications:\n${snapshot.error}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  )
-                      : !snapshot.hasData
-                      ? const Center(
-                    child: CircularProgressIndicator(),
-                  )
-                      : docs.isEmpty
-                      ? const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.notifications_none,
-                          color: AppColors.primary,
-                          size: 52,
-                        ),
-                        SizedBox(height: 12),
-                        Text(
-                          'No notifications yet',
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          'Updates about your activities will appear here.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                      : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(
-                      24,
-                      8,
-                      24,
-                      24,
-                    ),
-                    itemCount: docs.length,
-                    itemBuilder: (context, index) {
-                      final doc = docs[index];
-                      final data = doc.data();
-
-                      return NotificationCard(
-                        icon: _iconForType(
-                          data['type'] as String? ?? '',
-                        ),
-                        title:
-                        data['title'] as String? ??
-                            'Activity update',
-                        message:
-                        data['message'] as String? ?? '',
-                        time: _timeLabel(data['createdAt']),
-                        unread: data['read'] != true,
-                        onTap: () => _openNotification(
-                          user.uid,
-                          doc.id,
-                          data,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+                  );
+                },
+              ),
       ),
       bottomNavigationBar: const AppBottomNavigation(selectedIndex: 2),
     );
@@ -353,11 +349,7 @@ class NotificationCard extends StatelessWidget {
                 color: NotificationsPage.backgroundColor,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                icon,
-                color: NotificationsPage.orangeColor,
-                size: 25,
-              ),
+              child: Icon(icon, color: NotificationsPage.orangeColor, size: 25),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -369,9 +361,7 @@ class NotificationCard extends StatelessWidget {
                     style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 14,
-                      fontWeight: unread
-                          ? FontWeight.bold
-                          : FontWeight.w600,
+                      fontWeight: unread ? FontWeight.bold : FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 3),

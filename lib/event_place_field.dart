@@ -37,13 +37,13 @@ class SelectedEventPlace {
   }
 
   Map<String, dynamic> toFirestore() => {
-        'location': name,
-        'address': address,
-        'city': city,
-        'placeId': placeId,
-        'latitude': latitude,
-        'longitude': longitude,
-      };
+    'location': name,
+    'address': address,
+    'city': city,
+    'placeId': placeId,
+    'latitude': latitude,
+    'longitude': longitude,
+  };
 }
 
 class EventPlaceField extends StatefulWidget {
@@ -78,8 +78,9 @@ class _EventPlaceFieldState extends State<EventPlaceField> {
     _controller.text = _display(widget.value);
   }
 
-  String _display(SelectedEventPlace? place) =>
-      place == null ? '' : (place.address.isNotEmpty ? place.address : place.name);
+  String _display(SelectedEventPlace? place) => place == null
+      ? ''
+      : (place.address.isNotEmpty ? place.address : place.name);
 
   @override
   void didUpdateWidget(covariant EventPlaceField oldWidget) {
@@ -108,9 +109,7 @@ class _EventPlaceFieldState extends State<EventPlaceField> {
   }
 
   static String _cityFromAddress(Map<String, dynamic> address) {
-    for (final key in [
-      'city', 'town', 'village', 'municipality', 'county',
-    ]) {
+    for (final key in ['city', 'town', 'village', 'municipality', 'county']) {
       final value = address[key];
       if (value is String && value.trim().isNotEmpty) return value.trim();
     }
@@ -140,7 +139,8 @@ class _EventPlaceFieldState extends State<EventPlaceField> {
       try {
         await previous;
         if (_lastRequest != null) {
-          final wait = const Duration(milliseconds: 1100) -
+          final wait =
+              const Duration(milliseconds: 1100) -
               DateTime.now().difference(_lastRequest!);
           if (wait > Duration.zero) await Future<void>.delayed(wait);
         }
@@ -154,11 +154,18 @@ class _EventPlaceFieldState extends State<EventPlaceField> {
           'countrycodes': 'se',
           'accept-language': 'sv',
         });
-        final response = await http.get(uri, headers: {
-          'Accept': 'application/json',
-          // För mobil/desktop. På webben används webbläsarens User-Agent/Referer.
-          if (!kIsWeb) 'User-Agent': 'ActivityMatchSchoolProject/1.0 (educational project)',
-        }).timeout(const Duration(seconds: 15));
+        final response = await http
+            .get(
+              uri,
+              headers: {
+                'Accept': 'application/json',
+                // För mobil/desktop. På webben används webbläsarens User-Agent/Referer.
+                if (!kIsWeb)
+                  'User-Agent':
+                      'ActivityMatchSchoolProject/1.0 (educational project)',
+              },
+            )
+            .timeout(const Duration(seconds: 15));
         if (response.statusCode != 200) {
           throw Exception('Söktjänsten svarade med ${response.statusCode}.');
         }
@@ -177,18 +184,24 @@ class _EventPlaceFieldState extends State<EventPlaceField> {
           final number = (address['house_number'] as String? ?? '').trim();
           final streetAddress = street.isEmpty
               ? ''
-              : number.isEmpty ? street : '$street $number';
+              : number.isEmpty
+              ? street
+              : '$street $number';
           final displayName = (name.isEmpty || name == number)
-              ? (streetAddress.isNotEmpty ? streetAddress : fullAddress.split(',').first.trim())
+              ? (streetAddress.isNotEmpty
+                    ? streetAddress
+                    : fullAddress.split(',').first.trim())
               : name;
-          matches.add(SelectedEventPlace(
-            placeId: 'osm:${item['osm_type']}:${item['osm_id']}',
-            name: displayName,
-            address: fullAddress,
-            city: city,
-            latitude: lat,
-            longitude: lon,
-          ));
+          matches.add(
+            SelectedEventPlace(
+              placeId: 'osm:${item['osm_type']}:${item['osm_id']}',
+              name: displayName,
+              address: fullAddress,
+              city: city,
+              latitude: lat,
+              longitude: lon,
+            ),
+          );
         }
         if (!mounted || revision != _revision) return;
         setState(() {
@@ -205,7 +218,8 @@ class _EventPlaceFieldState extends State<EventPlaceField> {
       if (!mounted || revision != _revision) return;
       setState(() {
         _loading = false;
-        _error = 'Kunde inte söka just nu. Kontrollera internet och försök igen.';
+        _error =
+            'Kunde inte söka just nu. Kontrollera internet och försök igen.';
       });
     }
   }
@@ -224,63 +238,79 @@ class _EventPlaceFieldState extends State<EventPlaceField> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      TextField(
-        controller: _controller,
-        focusNode: _focus,
-        style: AppTextStyles.bodyLarge,
-        textInputAction: TextInputAction.search,
-        onSubmitted: (_) => _search(),
-        onChanged: _textChanged,
-        decoration: AppInputs.field(
-          hint: 'Adress, café, park eller plats + stad',
-          icon: Icons.location_on_outlined,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _controller,
+          focusNode: _focus,
+          style: AppTextStyles.bodyLarge,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) => _search(),
+          onChanged: _textChanged,
+          decoration: AppInputs.field(
+            hint: 'Adress, café, park eller plats + stad',
+            icon: Icons.location_on_outlined,
+          ),
         ),
-      ),
-      const SizedBox(height: AppSpacing.sm),
-      SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: _loading ? null : _search,
-          icon: _loading
-              ? const SizedBox(width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.search),
-          label: Text(_loading ? 'Söker…' : 'Sök adress'),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _loading ? null : _search,
+            icon: _loading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.search),
+            label: Text(_loading ? 'Söker…' : 'Sök adress'),
+          ),
         ),
-      ),
-      if (widget.value != null)
-        Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.sm),
-          child: Text('Vald plats: ${widget.value!.name} · ${widget.value!.city}',
-              style: AppTextStyles.bodySecondary),
-        ),
-      if (_error != null)
-        Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.sm),
-          child: Text(_error!,
+        if (widget.value != null)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Text(
+              'Vald plats: ${widget.value!.name} · ${widget.value!.city}',
+              style: AppTextStyles.bodySecondary,
+            ),
+          ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Text(
+              _error!,
               style: AppTextStyles.bodySecondary.copyWith(
                 color: Theme.of(context).colorScheme.error,
-              )),
-        ),
-      if (_results.isNotEmpty)
-        Container(
-          margin: const EdgeInsets.only(top: AppSpacing.sm),
-          decoration: AppDecorations.input,
-          child: Column(children: [
-            for (final place in _results)
-              ListTile(
-                leading: const Icon(Icons.place_outlined),
-                title: Text(place.name, style: AppTextStyles.bodyLarge),
-                subtitle: Text('${place.city} · ${place.address}',
-                    style: AppTextStyles.bodySecondary),
-                onTap: () => _select(place),
               ),
-          ]),
+            ),
+          ),
+        if (_results.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: AppSpacing.sm),
+            decoration: AppDecorations.input,
+            child: Column(
+              children: [
+                for (final place in _results)
+                  ListTile(
+                    leading: const Icon(Icons.place_outlined),
+                    title: Text(place.name, style: AppTextStyles.bodyLarge),
+                    subtitle: Text(
+                      '${place.city} · ${place.address}',
+                      style: AppTextStyles.bodySecondary,
+                    ),
+                    onTap: () => _select(place),
+                  ),
+              ],
+            ),
+          ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Adressdata © OpenStreetMap contributors · Nominatim',
+          style: AppTextStyles.bodySecondary,
         ),
-      const SizedBox(height: AppSpacing.xs),
-      Text('Adressdata © OpenStreetMap contributors · Nominatim',
-          style: AppTextStyles.bodySecondary),
-    ]);
+      ],
+    );
   }
 }

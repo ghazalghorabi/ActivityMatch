@@ -8,6 +8,7 @@ import 'model.dart';
 import 'app_theme.dart';
 import 'event_place_field.dart';
 import 'event_cover_gallery.dart';
+import 'event_categories.dart';
 
 // ============================================================
 // CREATE EVENT PAGE
@@ -29,19 +30,11 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
   String? selectedCoverUrl;
   DateTime? date;
-  String activity = 'Padel';
+  String activity = 'Sports';
   int capacity = 8;
   RangeValues age = const RangeValues(18, 70);
 
-  final activities = [
-    'Padel',
-    'Running',
-    'Drinks',
-    'Coffee',
-    'Walk',
-    'Gym',
-    'Gaming',
-  ];
+  final activities = EventCategories.all;
 
   @override
   void dispose() {
@@ -68,9 +61,10 @@ class _CreateEventPageState extends State<CreateEventPage> {
             _photo(),
             _label('Event title'),
             _field(title, 'Event name'),
-            _label('Activity'),
+            _label('Category'),
             Wrap(
-              spacing: AppSpacing.sm,
+              spacing: 10,
+              runSpacing: 12,
               children: activities.map((a) {
                 return ChoiceChip(
                   label: Text(a),
@@ -155,7 +149,10 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
   Widget _photo() => GestureDetector(
     onTap: () async {
-      final chosen = await EventCoverGallery.choose(context, selected: selectedCoverUrl);
+      final chosen = await EventCoverGallery.choose(
+        context,
+        selected: selectedCoverUrl,
+      );
       if (chosen != null && mounted) setState(() => selectedCoverUrl = chosen);
     },
     child: Container(
@@ -164,16 +161,31 @@ class _CreateEventPageState extends State<CreateEventPage> {
       clipBehavior: Clip.antiAlias,
       decoration: AppDecorations.input,
       child: selectedCoverUrl == null
-          ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.add_photo_alternate_outlined, size: 35),
-              SizedBox(height: AppSpacing.sm),
-              Text('Choose cover photo *'),
-            ])
-          : Stack(fit: StackFit.expand, children: [
-              Image.network(selectedCoverUrl!, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported_outlined))),
-              const Positioned(right: 12, bottom: 12, child: Chip(label: Text('Change cover'))),
-            ]),
+          ? const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add_photo_alternate_outlined, size: 35),
+                SizedBox(height: AppSpacing.sm),
+                Text('Choose cover photo *'),
+              ],
+            )
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  selectedCoverUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(Icons.image_not_supported_outlined),
+                  ),
+                ),
+                const Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: Chip(label: Text('Change cover')),
+                ),
+              ],
+            ),
     ),
   );
 
@@ -313,6 +325,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
         'description': description.text.trim(),
         ...selectedPlace!.toFirestore(),
         'activity': activity,
+        'category': activity,
         'tags': [activity],
         'date': Timestamp.fromDate(eventStart),
         'time': startTime.text,
@@ -346,4 +359,3 @@ class _CreateEventPageState extends State<CreateEventPage> {
     }
   }
 }
-

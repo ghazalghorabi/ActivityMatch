@@ -241,7 +241,6 @@ class AppTextStyles {
     fontSize: 14,
   );
 
-
   // EVENT CARD
 
   static const TextStyle eventTitle = TextStyle(
@@ -271,7 +270,6 @@ class AppTextStyles {
     fontSize: 13,
     fontWeight: FontWeight.w500,
   );
-
 
   // SEARCH
 
