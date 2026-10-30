@@ -159,23 +159,38 @@ class _HomePageState extends State<HomePage> {
     List<String> interests,
     String userLocation,
   ) {
-    final city = userLocation.trim().toLowerCase();
+    String normalizeCity(String value) {
+      final city = value.trim().toLowerCase();
 
-    final events = getFilteredEvents(sourceEvents).where((event) {
-      if (city.isEmpty) return false;
-      return event.city.trim().toLowerCase() == city;
+      if (city.contains('göteborg') || city.contains('gothenburg')) {
+        return 'gothenburg';
+      }
+
+      return city;
+    }
+
+    final city = normalizeCity(userLocation);
+
+    // Recommendations require a selected profile city.
+    if (city.isEmpty) {
+      return [];
+    }
+
+    // Preserve existing date, search, category, and availability filters.
+    final filteredEvents = getFilteredEvents(sourceEvents);
+
+    // Only events from the user's city.
+    final events = filteredEvents.where((event) {
+      return normalizeCity(event.city) == city;
     }).toList();
 
+    // Only the nine supported categories count as interests.
     final selectedInterests = interests
         .where((interest) => EventCategories.all.contains(interest))
         .toSet();
 
     int score(ActivityEvent event) {
       int total = 0;
-
-      if (selectedInterests.contains(event.activity)) {
-        total += 10;
-      }
 
       if (event.availableSpots > 0) {
         total += 3;
@@ -191,12 +206,22 @@ class _HomePageState extends State<HomePage> {
     }
 
     events.sort((a, b) {
+      // FIRST: Always prioritize matching interests.
+      final aMatches = selectedInterests.contains(a.activity);
+      final bMatches = selectedInterests.contains(b.activity);
+
+      if (aMatches != bMatches) {
+        return aMatches ? -1 : 1;
+      }
+
+      // SECOND: Use existing recommendation scoring.
       final scoreComparison = score(b).compareTo(score(a));
 
       if (scoreComparison != 0) {
         return scoreComparison;
       }
 
+      // THIRD: Earlier events first.
       return a.date.compareTo(b.date);
     });
 
@@ -251,208 +276,247 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, authSnapshot) {
+        if (authSnapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: AppColors.background,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: user == null
-          ? null
-          : FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .snapshots(),
-      builder: (context, snapshot) {
-        final data = snapshot.data?.data();
-        final interests = List<String>.from(data?['interests'] ?? []);
-        final userLocation = data?['location'] as String? ?? '';
+        final user = authSnapshot.data;
 
-        debugPrint('PROFILE LOCATION: $userLocation');
-
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance.collection('events').snapshots(),
-          builder: (context, eventsSnapshot) {
-            if (eventsSnapshot.hasError) {
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: user == null
+              ? null
+              : FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(user.uid)
+                    .snapshots(),
+          builder: (context, snapshot) {
+            if (user != null && snapshot.hasError) {
               return Scaffold(
                 backgroundColor: AppColors.background,
                 body: Center(
-                  child: Text('Could not load events: ${eventsSnapshot.error}'),
+                  child: Text('Could not load your profile: ${snapshot.error}'),
                 ),
               );
             }
 
-            if (!eventsSnapshot.hasData) {
+            if (user != null &&
+                snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
               return const Scaffold(
                 backgroundColor: AppColors.background,
                 body: Center(child: CircularProgressIndicator()),
               );
             }
 
-            // Hide cancelled events from discovery.
-            // Older events without a status field remain active.
-            final realEvents = eventsSnapshot.data!.docs
-                .where((document) {
-                  final status = document.data()['status'];
-                  return status == null || status == 'active';
-                })
-                .map(eventFromFirestore)
-                .toList();
+            final data = snapshot.data?.data();
+            final interests = List<String>.from(data?['interests'] ?? []);
+            final userLocation = data?['location'] as String? ?? '';
 
-            final randomEvents = getRandomEvents(realEvents);
-            final filteredEvents = getFilteredEvents(randomEvents);
-
-            final recommendedEvents = getRecommendedEvents(
-              realEvents,
-              interests,
-              userLocation,
-            );
-
-            debugPrint(
-              'RECOMMENDED CITIES: ${recommendedEvents.map((e) => e.city).toList()}',
-            );
-
-            final isAllActivities = selectedCategory == 'All activities';
-
-            return Scaffold(
-              backgroundColor: AppColors.background,
-              extendBody: true,
-              body: SafeArea(
-                child: CustomScrollView(
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.xl,
-                        AppSpacing.xl,
-                        AppSpacing.xl,
-                        0,
-                      ),
-                      sliver: SliverList(
-                        delegate: SliverChildListDelegate([
-                          const Header(),
-                          const SizedBox(height: AppSpacing.xl),
-                          SearchSection(
-                            controller: searchController,
-                            onFilterPressed: openFilters,
-                            onSearch: (text) {
-                              setState(() {});
-                            },
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                          CategorySelector(
-                            categories: categories,
-                            selectedCategory: selectedCategory,
-                            onSelected: (category) {
-                              setState(() {
-                                selectedCategory = category;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: AppSpacing.xxl),
-                          if (isAllActivities) ...[
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Explore events',
-                                  style: AppTextStyles.sectionTitle,
-                                ),
-                                TextButton(
-                                  onPressed: () => openViewAll(
-                                    'Explore events',
-                                    filteredEvents,
-                                  ),
-                                  child: const Text('View All'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                          ] else ...[
-                            Text(
-                              '$selectedCategory events',
-                              style: AppTextStyles.sectionTitle,
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                          ],
-                        ]),
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('events')
+                  .snapshots(),
+              builder: (context, eventsSnapshot) {
+                if (eventsSnapshot.hasError) {
+                  return Scaffold(
+                    backgroundColor: AppColors.background,
+                    body: Center(
+                      child: Text(
+                        'Could not load events: ${eventsSnapshot.error}',
                       ),
                     ),
-                    if (isAllActivities) ...[
-                      SliverToBoxAdapter(child: buildCarousel(filteredEvents)),
-                      const SliverToBoxAdapter(
-                        child: SizedBox(height: AppSpacing.xl),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xl,
-                        ),
-                        sliver: SliverToBoxAdapter(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Recommended for you',
-                                style: AppTextStyles.sectionTitle,
-                              ),
-                              TextButton(
-                                onPressed: () => openViewAll(
-                                  'Recommended for you',
-                                  recommendedEvents,
-                                ),
-                                child: const Text('View All'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SliverToBoxAdapter(
-                        child: SizedBox(height: AppSpacing.md),
-                      ),
-                      SliverToBoxAdapter(
-                        child: buildCarousel(recommendedEvents),
-                      ),
-                    ] else if (filteredEvents.isEmpty)
-                      const SliverPadding(
-                        padding: EdgeInsets.all(AppSpacing.xl),
-                        sliver: SliverToBoxAdapter(
-                          child: Text(
-                            'No events match your filters.',
-                            style: AppTextStyles.emptyMessage,
-                          ),
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xl,
-                        ),
-                        sliver: SliverLayoutBuilder(
-                          builder: (context, constraints) {
-                            final availableWidth = constraints.crossAxisExtent;
-                            const columns = 2;
-                            final cardWidth =
-                                (availableWidth - AppSpacing.md) / 2;
-                            final cardHeight = cardWidth * 1.38;
+                  );
+                }
 
-                            return SliverGrid(
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: columns,
-                                    mainAxisSpacing: AppSpacing.md,
-                                    crossAxisSpacing: AppSpacing.md,
-                                    mainAxisExtent: cardHeight,
-                                  ),
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) =>
-                                    buildEventCard(filteredEvents[index]),
-                                childCount: filteredEvents.length,
+                if (!eventsSnapshot.hasData) {
+                  return const Scaffold(
+                    backgroundColor: AppColors.background,
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                // Hide cancelled events from discovery.
+                // Older events without a status field remain active.
+                final realEvents = eventsSnapshot.data!.docs
+                    .where((document) {
+                      final status = document.data()['status'];
+                      return status == null || status == 'active';
+                    })
+                    .map(eventFromFirestore)
+                    .toList();
+
+                final randomEvents = getRandomEvents(realEvents);
+                final filteredEvents = getFilteredEvents(randomEvents);
+
+                final recommendedEvents = getRecommendedEvents(
+                  realEvents,
+                  interests,
+                  userLocation,
+                );
+
+                debugPrint(
+                  'RECOMMENDED CITIES: ${recommendedEvents.map((e) => e.city).toList()}',
+                );
+
+                final isAllActivities = selectedCategory == 'All activities';
+
+                return Scaffold(
+                  backgroundColor: AppColors.background,
+                  extendBody: true,
+                  body: SafeArea(
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.xl,
+                            AppSpacing.xl,
+                            AppSpacing.xl,
+                            0,
+                          ),
+                          sliver: SliverList(
+                            delegate: SliverChildListDelegate([
+                              const Header(),
+                              const SizedBox(height: AppSpacing.xl),
+                              SearchSection(
+                                controller: searchController,
+                                onFilterPressed: openFilters,
+                                onSearch: (text) {
+                                  setState(() {});
+                                },
                               ),
-                            );
-                          },
+                              const SizedBox(height: AppSpacing.lg),
+                              CategorySelector(
+                                categories: categories,
+                                selectedCategory: selectedCategory,
+                                onSelected: (category) {
+                                  setState(() {
+                                    selectedCategory = category;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: AppSpacing.xxl),
+                              if (isAllActivities) ...[
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Explore events',
+                                      style: AppTextStyles.sectionTitle,
+                                    ),
+                                    TextButton(
+                                      onPressed: () => openViewAll(
+                                        'Explore events',
+                                        filteredEvents,
+                                      ),
+                                      child: const Text('View All'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+                              ] else ...[
+                                Text(
+                                  '$selectedCategory events',
+                                  style: AppTextStyles.sectionTitle,
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+                              ],
+                            ]),
+                          ),
                         ),
-                      ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 110)),
-                  ],
-                ),
-              ),
-              bottomNavigationBar: const AppBottomNavigation(selectedIndex: 0),
+                        if (isAllActivities) ...[
+                          SliverToBoxAdapter(
+                            child: buildCarousel(filteredEvents),
+                          ),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: AppSpacing.xl),
+                          ),
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.xl,
+                            ),
+                            sliver: SliverToBoxAdapter(
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Recommended for you',
+                                    style: AppTextStyles.sectionTitle,
+                                  ),
+                                  TextButton(
+                                    onPressed: () => openViewAll(
+                                      'Recommended for you',
+                                      recommendedEvents,
+                                    ),
+                                    child: const Text('View All'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: AppSpacing.md),
+                          ),
+                          SliverToBoxAdapter(
+                            child: buildCarousel(recommendedEvents),
+                          ),
+                        ] else if (filteredEvents.isEmpty)
+                          const SliverPadding(
+                            padding: EdgeInsets.all(AppSpacing.xl),
+                            sliver: SliverToBoxAdapter(
+                              child: Text(
+                                'No events match your filters.',
+                                style: AppTextStyles.emptyMessage,
+                              ),
+                            ),
+                          )
+                        else
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.xl,
+                            ),
+                            sliver: SliverLayoutBuilder(
+                              builder: (context, constraints) {
+                                final availableWidth =
+                                    constraints.crossAxisExtent;
+                                const columns = 2;
+                                final cardWidth =
+                                    (availableWidth - AppSpacing.md) / 2;
+                                final cardHeight = cardWidth * 1.38;
+
+                                return SliverGrid(
+                                  gridDelegate:
+                                      SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: columns,
+                                        mainAxisSpacing: AppSpacing.md,
+                                        crossAxisSpacing: AppSpacing.md,
+                                        mainAxisExtent: cardHeight,
+                                      ),
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, index) =>
+                                        buildEventCard(filteredEvents[index]),
+                                    childCount: filteredEvents.length,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                      ],
+                    ),
+                  ),
+                  bottomNavigationBar: const AppBottomNavigation(
+                    selectedIndex: 0,
+                  ),
+                );
+              },
             );
           },
         );

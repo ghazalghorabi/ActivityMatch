@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'base_widgets.dart';
-import 'event_data.dart';
-import 'model.dart';
 import 'app_theme.dart';
 import 'event_place_field.dart';
 import 'event_cover_gallery.dart';
@@ -30,11 +27,105 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
   String? selectedCoverUrl;
   DateTime? date;
-  String activity = 'Sports';
+  String? activity;
   int capacity = 8;
   RangeValues age = const RangeValues(18, 70);
 
   final activities = EventCategories.all;
+  bool showErrors = false;
+  final GlobalKey _photoKey = GlobalKey();
+  final GlobalKey _titleKey = GlobalKey();
+  final GlobalKey _descriptionKey = GlobalKey();
+  final GlobalKey _categoryKey = GlobalKey();
+  final GlobalKey _dateKey = GlobalKey();
+  final GlobalKey _timeKey = GlobalKey();
+  final GlobalKey _locationKey = GlobalKey();
+
+  static final RegExp _validTime = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
+
+  String? get _photoError => showErrors && selectedCoverUrl == null
+      ? 'Please choose a cover photo.'
+      : null;
+  String? get _titleError => showErrors && title.text.trim().isEmpty
+      ? 'Please enter an event title.'
+      : null;
+  String? get _categoryError =>
+      showErrors && activity == null ? 'Please select a category.' : null;
+  String? get _descriptionError => showErrors && description.text.trim().isEmpty
+      ? 'Please enter a description.'
+      : null;
+  String? get _dateError =>
+      showErrors && date == null ? 'Please select an event date.' : null;
+  String? get _locationError => showErrors && selectedPlace == null
+      ? 'Please select an event location.'
+      : null;
+
+  DateTime? _dateTimeFor(String value) {
+    if (date == null || !_validTime.hasMatch(value.trim())) return null;
+    final parts = value.trim().split(':').map(int.parse).toList();
+    return DateTime(date!.year, date!.month, date!.day, parts[0], parts[1]);
+  }
+
+  String? get _startError {
+    if (!showErrors) return null;
+    if (startTime.text.trim().isEmpty) return 'Select a start time.';
+    if (!_validTime.hasMatch(startTime.text.trim()))
+      return 'Use HH:mm (e.g. 13:00).';
+    final start = _dateTimeFor(startTime.text);
+    if (start != null && !start.isAfter(DateTime.now())) {
+      return 'Start time must be in the future.';
+    }
+    return null;
+  }
+
+  String? get _endError {
+    if (!showErrors) return null;
+    if (endTime.text.trim().isEmpty) return 'Select an end time.';
+    if (!_validTime.hasMatch(endTime.text.trim()))
+      return 'Use HH:mm (e.g. 14:00).';
+    final start = _dateTimeFor(startTime.text);
+    final end = _dateTimeFor(endTime.text);
+    if (start != null && end != null && !end.isAfter(start)) {
+      return 'End time must be after start time.';
+    }
+    return null;
+  }
+
+  static const Color _errorColor = Color(0xFFF87171);
+
+  Widget _errorText(String? error) => error == null
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            error,
+            style: const TextStyle(color: _errorColor, fontSize: 12),
+          ),
+        );
+
+  void _scrollToFirstError() {
+    final keys = <GlobalKey?>[
+      if (_photoError != null) _photoKey,
+      if (_titleError != null) _titleKey,
+      if (_categoryError != null) _categoryKey,
+      if (_descriptionError != null) _descriptionKey,
+      if (_dateError != null) _dateKey,
+      if (_startError != null || _endError != null) _timeKey,
+      if (_locationError != null) _locationKey,
+    ];
+    if (keys.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = keys.first?.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 300),
+          alignment: 0.12,
+        );
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -58,45 +149,107 @@ class _CreateEventPageState extends State<CreateEventPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _photo(),
+            Column(
+              key: _photoKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [_photo(), _errorText(_photoError)],
+            ),
             _label('Event title'),
-            _field(title, 'Event name'),
+            Column(
+              key: _titleKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _field(title, 'Event name', error: _titleError),
+                _errorText(_titleError),
+              ],
+            ),
             _label('Category'),
-            Wrap(
-              spacing: 10,
-              runSpacing: 12,
-              children: activities.map((a) {
-                return ChoiceChip(
-                  label: Text(a),
-                  selected: activity == a,
-                  showCheckmark: false,
-                  selectedColor: AppColors.primary,
-                  onSelected: (_) => setState(() => activity = a),
-                );
-              }).toList(),
+            Column(
+              key: _categoryKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 12,
+                  children: activities.map((a) {
+                    return ChoiceChip(
+                      label: Text(a),
+                      selected: activity == a,
+                      showCheckmark: false,
+                      selectedColor: AppColors.primary,
+                      onSelected: (_) => setState(() => activity = a),
+                    );
+                  }).toList(),
+                ),
+                _errorText(_categoryError),
+              ],
             ),
             _label('Description'),
-            _field(description, 'Tell people about the event', lines: 3),
+            Column(
+              key: _descriptionKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _field(
+                  description,
+                  'Tell people about the event',
+                  lines: 3,
+                  error: _descriptionError,
+                ),
+                _errorText(_descriptionError),
+              ],
+            ),
             _label('Date'),
-            _box(
-              Icons.calendar_today_outlined,
-              date == null
-                  ? 'Select date'
-                  : '${date!.day}/${date!.month}/${date!.year}',
-              _pickDate,
+            Column(
+              key: _dateKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _box(
+                  Icons.calendar_today_outlined,
+                  date == null
+                      ? 'Select date'
+                      : '${date!.day}/${date!.month}/${date!.year}',
+                  _pickDate,
+                ),
+                _errorText(_dateError),
+              ],
             ),
             _label('Time'),
             Row(
+              key: _timeKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: _timeField(startTime, 'Start time')),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _timeField(startTime, 'Start time', _startError),
+                      _errorText(_startError),
+                    ],
+                  ),
+                ),
                 const SizedBox(width: AppSpacing.md),
-                Expanded(child: _timeField(endTime, 'End time')),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _timeField(endTime, 'End time', _endError),
+                      _errorText(_endError),
+                    ],
+                  ),
+                ),
               ],
             ),
             _label('Location'),
-            EventPlaceField(
-              value: selectedPlace,
-              onChanged: (place) => setState(() => selectedPlace = place),
+            Column(
+              key: _locationKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                EventPlaceField(
+                  value: selectedPlace,
+                  onChanged: (place) => setState(() => selectedPlace = place),
+                ),
+                _errorText(_locationError),
+              ],
             ),
             _label('Participants'),
             Row(
@@ -203,10 +356,27 @@ class _CreateEventPageState extends State<CreateEventPage> {
     String hint, {
     int lines = 1,
     IconData? icon,
+    String? error,
   }) => TextField(
     controller: controller,
     maxLines: lines,
-    decoration: AppInputs.field(hint: hint, icon: icon),
+    onChanged: (_) {
+      if (showErrors) setState(() {});
+    },
+    decoration: AppInputs.field(hint: hint, icon: icon).copyWith(
+      enabledBorder: error == null
+          ? null
+          : OutlineInputBorder(
+              borderRadius: AppRadii.field,
+              borderSide: const BorderSide(color: _errorColor),
+            ),
+      focusedBorder: error == null
+          ? null
+          : OutlineInputBorder(
+              borderRadius: AppRadii.field,
+              borderSide: const BorderSide(color: _errorColor),
+            ),
+    ),
   );
 
   Widget _box(IconData icon, String text, VoidCallback tap) => ListTile(
@@ -221,7 +391,11 @@ class _CreateEventPageState extends State<CreateEventPage> {
   // TIME
   // ============================================================
 
-  Widget _timeField(TextEditingController controller, String hint) {
+  Widget _timeField(
+    TextEditingController controller,
+    String hint,
+    String? error,
+  ) {
     final times = [
       for (var h = 0; h < 24; h++)
         for (var m in [0, 15, 30, 45])
@@ -235,14 +409,21 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
         return times.where((t) => t.replaceAll(':', '').startsWith(input));
       },
-      onSelected: (value) => controller.text = value,
+      onSelected: (value) => setState(() => controller.text = value),
       fieldViewBuilder: (_, textController, focus, __) {
         return TextField(
           controller: textController,
           focusNode: focus,
           keyboardType: TextInputType.number,
-          onChanged: (value) => controller.text = value,
-          decoration: AppInputs.field(hint: hint, icon: Icons.access_time),
+          onChanged: (value) => setState(() => controller.text = value),
+          decoration: AppInputs.field(hint: hint, icon: Icons.access_time)
+              .copyWith(
+                enabledBorder: error == null
+                    ? null
+                    : const OutlineInputBorder(
+                        borderSide: BorderSide(color: _errorColor),
+                      ),
+              ),
         );
       },
     );
@@ -276,23 +457,25 @@ class _CreateEventPageState extends State<CreateEventPage> {
       return;
     }
 
-    final validTime = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
+    setState(() => showErrors = true);
 
     if (selectedCoverUrl == null ||
         title.text.trim().isEmpty ||
+        activity == null ||
         description.text.trim().isEmpty ||
         selectedPlace == null ||
         date == null ||
-        !validTime.hasMatch(startTime.text) ||
-        !validTime.hasMatch(endTime.text)) {
+        !_validTime.hasMatch(startTime.text.trim()) ||
+        !_validTime.hasMatch(endTime.text.trim())) {
+      _scrollToFirstError();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill in all required fields')),
       );
       return;
     }
 
-    final startParts = startTime.text.split(':').map(int.parse).toList();
-    final endParts = endTime.text.split(':').map(int.parse).toList();
+    final startParts = startTime.text.trim().split(':').map(int.parse).toList();
+    final endParts = endTime.text.trim().split(':').map(int.parse).toList();
 
     final eventStart = DateTime(
       date!.year,
@@ -311,6 +494,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
     );
 
     if (!eventStart.isAfter(DateTime.now()) || !eventEnd.isAfter(eventStart)) {
+      _scrollToFirstError();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Choose a future event with a valid end time'),
@@ -324,9 +508,9 @@ class _CreateEventPageState extends State<CreateEventPage> {
         'title': title.text.trim(),
         'description': description.text.trim(),
         ...selectedPlace!.toFirestore(),
-        'activity': activity,
-        'category': activity,
-        'tags': [activity],
+        'activity': activity!,
+        'category': activity!,
+        'tags': [activity!],
         'date': Timestamp.fromDate(eventStart),
         'time': startTime.text,
         'endTime': endTime.text,

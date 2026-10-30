@@ -18,6 +18,66 @@ class _SignUpPageState extends State<SignUpPage> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final Set<String> selectedInterests = {};
+  static const List<String> swedishCities = [
+    'Göteborg',
+    'Stockholm',
+    'Malmö',
+    'Uppsala',
+    'Linköping',
+    'Västerås',
+    'Örebro',
+    'Helsingborg',
+    'Jönköping',
+    'Norrköping',
+    'Lund',
+    'Umeå',
+    'Gävle',
+    'Borås',
+    'Eskilstuna',
+    'Södertälje',
+    'Karlstad',
+    'Täby',
+    'Halmstad',
+    'Växjö',
+    'Sundsvall',
+    'Luleå',
+    'Trollhättan',
+    'Östersund',
+    'Borlänge',
+    'Falun',
+    'Kalmar',
+    'Skövde',
+    'Kristianstad',
+    'Karlskrona',
+    'Uddevalla',
+    'Varberg',
+    'Kungsbacka',
+    'Alingsås',
+    'Kungälv',
+    'Mölndal',
+    'Partille',
+    'Lerum',
+    'Lidköping',
+    'Mariestad',
+    'Nyköping',
+    'Nässjö',
+    'Motala',
+    'Piteå',
+    'Skellefteå',
+    'Örnsköldsvik',
+    'Visby',
+    'Ystad',
+    'Trelleborg',
+    'Landskrona',
+    'Ängelholm',
+    'Falkenberg',
+    'Enköping',
+    'Sala',
+    'Arvika',
+    'Kiruna',
+    'Gällivare',
+    'Marstrand',
+  ];
   DateTime? birthDate;
   bool isLoading = false;
 
@@ -44,6 +104,14 @@ class _SignUpPageState extends State<SignUpPage> {
     if (birthDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select your date of birth.')),
+      );
+      return;
+    }
+    if (!swedishCities.contains(locationController.text.trim())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a city from the suggestions.'),
+        ),
       );
       return;
     }
@@ -80,6 +148,53 @@ class _SignUpPageState extends State<SignUpPage> {
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  Widget citySelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        requiredLabel('Location'),
+        const SizedBox(height: AppSpacing.fieldLabelBottom),
+
+        Autocomplete<String>(
+          optionsBuilder: (TextEditingValue value) {
+            final query = value.text.trim().toLowerCase();
+
+            if (query.isEmpty) {
+              return swedishCities;
+            }
+
+            return swedishCities.where(
+              (city) => city.toLowerCase().contains(query),
+            );
+          },
+
+          onSelected: (String city) {
+            locationController.text = city;
+          },
+
+          fieldViewBuilder:
+              (context, textEditingController, focusNode, onFieldSubmitted) {
+                return TextField(
+                  controller: textEditingController,
+                  focusNode: focusNode,
+                  style: AppTextStyles.bodyLarge,
+                  decoration: AppInputs.field(
+                    hint: 'Search for your city',
+                    icon: Icons.location_city_outlined,
+                  ),
+                  onChanged: (_) {
+                    // Typing invalidates the previous selection.
+                    locationController.clear();
+                  },
+                );
+              },
+        ),
+
+        const SizedBox(height: AppSpacing.xl),
+      ],
+    );
   }
 
   Widget requiredLabel(String label) => Row(
@@ -171,7 +286,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               const SizedBox(height: AppSpacing.xl),
-              field('Location', locationController, 'Enter your location'),
+              citySelector(),
               field(
                 'Email',
                 emailController,

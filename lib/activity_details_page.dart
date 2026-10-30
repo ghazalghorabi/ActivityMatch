@@ -136,6 +136,121 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
 
   Future<void> leaveEvent() async {
     if (isJoining) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || widget.event.id.isEmpty) return;
+
+    setState(() => isJoining = true);
+    final firestore = FirebaseFirestore.instance;
+    final eventRef = firestore.collection('events').doc(widget.event.id);
+    final attendeeRef = eventRef.collection('attendees').doc(user.uid);
+
+    try {
+      // Query outside the transaction: Firestore mobile/web transactions
+      // read documents, not queries. Recheck the selected document inside.
+      final queue = await eventRef
+          .collection('waitlist')
+          .orderBy('joinedAt')
+          .limit(1)
+          .get();
+      final firstWaiting = queue.docs.isEmpty ? null : queue.docs.first;
+      final promotedId = firstWaiting?.id;
+      final promotedRef = promotedId == null
+          ? null
+          : eventRef.collection('attendees').doc(promotedId);
+
+      await firestore.runTransaction((transaction) async {
+        final eventSnap = await transaction.get(eventRef);
+        final leavingSnap = await transaction.get(attendeeRef);
+        final waitingSnap = firstWaiting == null
+            ? null
+            : await transaction.get(firstWaiting.reference);
+        final promotedSnap = promotedRef == null
+            ? null
+            : await transaction.get(promotedRef);
+
+        if (!eventSnap.exists || !leavingSnap.exists) {
+          throw Exception('Event or attendance no longer exists.');
+        }
+        final data = eventSnap.data()!;
+        final capacity = (data['capacity'] as num).toInt();
+        final count = (data['participantCount'] as num).toInt();
+        final spots = (data['availableSpots'] as num).toInt();
+        if (count <= 0 || spots >= capacity) {
+          throw Exception('Event attendance data is invalid.');
+        }
+
+        if (waitingSnap != null) {
+          if (!waitingSnap.exists || promotedSnap!.exists) {
+            throw Exception('The queue changed. Please try again.');
+          }
+          if (data['status'] == 'cancelled') {
+            throw Exception('This event is cancelled.');
+          }
+          final waitingData = waitingSnap.data()!;
+          final promotedName =
+              waitingData['displayName'] as String? ?? 'Attendee';
+          final noticeRef = firestore
+              .collection('users')
+              .doc(promotedId!)
+              .collection('notifications')
+              .doc();
+
+          transaction.delete(attendeeRef);
+          transaction.set(promotedRef!, {
+            'userId': promotedId,
+            'displayName': promotedName,
+            'joinedAt': FieldValue.serverTimestamp(),
+          });
+          transaction.delete(firstWaiting!.reference);
+          // Counts stay unchanged: one person leaves, one person joins.
+          transaction.update(eventRef, {
+            'promotionFrom': user.uid,
+            'promotionTo': promotedId,
+            'promotionAt': FieldValue.serverTimestamp(),
+          });
+          transaction.set(noticeRef, {
+            'type': 'event_waitlist_promoted',
+            'title': 'You got a spot!',
+            'message':
+                'You are now attending ${data['title'] as String? ?? 'the event'}.',
+            'eventId': widget.event.id,
+            'actorId': user.uid,
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          transaction.delete(attendeeRef);
+          transaction.update(eventRef, {
+            'participantCount': count - 1,
+            'availableSpots': spots + 1,
+          });
+        }
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            firstWaiting == null
+                ? 'You have left the event.'
+                : 'You left the event. The first queued person was promoted.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not leave event: $e')));
+    } finally {
+      if (mounted) setState(() => isJoining = false);
+    }
+  }
+
+  Future<void> joinWaitlist() async {
+    if (isJoining) return;
+
+    final loggedIn = await requireLogin(context);
+    if (!mounted || !loggedIn) return;
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || widget.event.id.isEmpty) return;
@@ -145,51 +260,93 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
     final firestore = FirebaseFirestore.instance;
     final eventRef = firestore.collection('events').doc(widget.event.id);
     final attendeeRef = eventRef.collection('attendees').doc(user.uid);
+    final waitlistRef = eventRef.collection('waitlist').doc(user.uid);
+
+    String displayName = user.displayName?.trim() ?? '';
+    try {
+      final profile = await firestore.collection('users').doc(user.uid).get();
+      final savedName = profile.data()?['name'];
+      if (savedName is String && savedName.trim().isNotEmpty) {
+        displayName = savedName.trim();
+      }
+    } catch (_) {
+      // Use the Firebase Auth display name if the profile cannot be loaded.
+    }
+    if (displayName.isEmpty) displayName = 'Attendee';
 
     try {
       await firestore.runTransaction((transaction) async {
         final eventSnapshot = await transaction.get(eventRef);
         final attendeeSnapshot = await transaction.get(attendeeRef);
+        final waitlistSnapshot = await transaction.get(waitlistRef);
 
         if (!eventSnapshot.exists) {
           throw Exception('This event no longer exists.');
         }
-
-        if (!attendeeSnapshot.exists) {
-          throw Exception('You are not attending this event.');
-        }
-
         final data = eventSnapshot.data()!;
-        final capacity = (data['capacity'] as num).toInt();
-        final participantCount = (data['participantCount'] as num).toInt();
-        final availableSpots = (data['availableSpots'] as num).toInt();
-
-        if (participantCount <= 0 || availableSpots >= capacity) {
-          throw Exception('The event attendance data is invalid.');
+        if ((data['status'] ?? 'active') != 'active') {
+          throw Exception('This event has been cancelled.');
+        }
+        if (data['hostId'] == user.uid) {
+          throw Exception('You cannot join your own event waiting list.');
+        }
+        if (attendeeSnapshot.exists) {
+          throw Exception('You are already attending this event.');
+        }
+        if (waitlistSnapshot.exists) {
+          throw Exception('You are already on the waiting list.');
+        }
+        if ((data['availableSpots'] as num).toInt() > 0) {
+          throw Exception(
+            'A spot is available. Please join the event instead.',
+          );
         }
 
-        transaction.delete(attendeeRef);
-
-        transaction.update(eventRef, {
-          'participantCount': participantCount - 1,
-          'availableSpots': availableSpots + 1,
+        transaction.set(waitlistRef, {
+          'userId': user.uid,
+          'displayName': displayName,
+          'joinedAt': FieldValue.serverTimestamp(),
         });
       });
 
       if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('You have left the event.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You joined the waiting list!')),
+      );
     } catch (e) {
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not leave event: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not join waiting list: $e')),
+      );
     } finally {
-      if (mounted) {
-        setState(() => isJoining = false);
-      }
+      if (mounted) setState(() => isJoining = false);
+    }
+  }
+
+  Future<void> leaveWaitlist() async {
+    if (isJoining) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || widget.event.id.isEmpty) return;
+
+    setState(() => isJoining = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.event.id)
+          .collection('waitlist')
+          .doc(user.uid)
+          .delete();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You left the waiting list.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not leave waiting list: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => isJoining = false);
     }
   }
 
@@ -433,6 +590,8 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
         final description =
             data?['description'] as String? ?? original.description;
         final location = data?['location'] as String? ?? original.location;
+        final city = (data?['city'] as String? ?? '').trim();
+        final address = (data?['address'] as String? ?? '').trim();
         final time = data?['time'] as String? ?? original.time;
         final date = (data?['date'] as Timestamp?)?.toDate() ?? original.date;
         final duration = data?['duration'] as String? ?? original.duration;
@@ -510,7 +669,12 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
                           ),
                         ),
                         const SizedBox(height: AppSpacing.lg),
-                        _buildLiveDateAndLocation(date, time, location),
+                        _buildLiveDateAndLocation(
+                          date,
+                          time,
+                          city.isNotEmpty ? city : location,
+                          address,
+                        ),
                         const SizedBox(height: AppSpacing.xl),
                         _buildLiveTags(tags),
                         const SizedBox(height: AppSpacing.huge),
@@ -563,8 +727,10 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
     DateTime date,
     String time,
     String location,
+    String address,
   ) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
@@ -582,6 +748,7 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
         ),
         const SizedBox(height: AppSpacing.md),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Icon(
               Icons.location_on_outlined,
@@ -589,7 +756,25 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
               size: 21,
             ),
             const SizedBox(width: 9),
-            Expanded(child: Text(location, style: AppTextStyles.bodySecondary)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(location, style: AppTextStyles.bodySecondary),
+                  if (address.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      address,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ],
@@ -988,131 +1173,148 @@ class _EventDetailsPageState extends State<EventDetailsPage> {
 
   Widget _buildBottomBar(ActivityEvent event) {
     final user = FirebaseAuth.instance.currentUser;
+    final eventRef = FirebaseFirestore.instance
+        .collection('events')
+        .doc(event.id);
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: event.id.isEmpty
-          ? null
-          : FirebaseFirestore.instance
-                .collection('events')
-                .doc(event.id)
-                .snapshots(),
+      stream: event.id.isEmpty ? null : eventRef.snapshots(),
       builder: (context, eventSnapshot) {
         final eventData = eventSnapshot.data?.data();
         final spotsLeft =
             (eventData?['availableSpots'] as num?)?.toInt() ??
             event.availableSpots;
-
         final isHost = user != null && eventData?['hostId'] == user.uid;
         final isCancelled = eventData?['status'] == 'cancelled';
 
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: user == null || event.id.isEmpty
               ? null
-              : FirebaseFirestore.instance
-                    .collection('events')
-                    .doc(event.id)
-                    .collection('attendees')
-                    .doc(user.uid)
-                    .snapshots(),
+              : eventRef.collection('attendees').doc(user.uid).snapshots(),
           builder: (context, attendeeSnapshot) {
             final joined = attendeeSnapshot.data?.exists ?? false;
-            final loading =
-                isJoining ||
-                (user != null &&
-                    event.id.isNotEmpty &&
-                    !attendeeSnapshot.hasData);
 
-            final disabled =
-                loading ||
-                isHost ||
-                (isCancelled && !joined) ||
-                (!joined && spotsLeft <= 0) ||
-                event.id.isEmpty;
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: user == null || event.id.isEmpty
+                  ? null
+                  : eventRef.collection('waitlist').doc(user.uid).snapshots(),
+              builder: (context, waitlistSnapshot) {
+                final waiting = waitlistSnapshot.data?.exists ?? false;
+                final loading =
+                    isJoining ||
+                    (event.id.isNotEmpty && !eventSnapshot.hasData) ||
+                    (user != null &&
+                        event.id.isNotEmpty &&
+                        (!attendeeSnapshot.hasData ||
+                            !waitlistSnapshot.hasData));
+                final hasError =
+                    eventSnapshot.hasError ||
+                    attendeeSnapshot.hasError ||
+                    waitlistSnapshot.hasError;
+                final disabled =
+                    loading ||
+                    hasError ||
+                    isHost ||
+                    (isCancelled && !joined && !waiting) ||
+                    event.id.isEmpty;
 
-            final buttonText = isHost
-                ? 'Your event'
-                : joined
-                ? 'Leave event'
-                : isCancelled
-                ? 'Event cancelled'
-                : spotsLeft <= 0
-                ? 'Event full'
-                : "I'm in";
+                final String buttonText;
+                final VoidCallback? action;
+                if (isHost) {
+                  buttonText = 'Your event';
+                  action = null;
+                } else if (joined) {
+                  buttonText = 'Leave event';
+                  action = leaveEvent;
+                } else if (waiting) {
+                  buttonText = 'Leave waiting list';
+                  action = leaveWaitlist;
+                } else if (isCancelled) {
+                  buttonText = 'Event cancelled';
+                  action = null;
+                } else if (spotsLeft <= 0) {
+                  buttonText = 'Join waiting list';
+                  action = joinWaitlist;
+                } else {
+                  buttonText = "I'm in";
+                  action = joinEvent;
+                }
 
-            return Container(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                14,
-                20,
-                MediaQuery.of(context).padding.bottom + 14,
-              ),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                border: Border(top: BorderSide(color: AppColors.borderSubtle)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 58,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: AppRadii.search,
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Text(
-                        '$spotsLeft spots left',
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                return Container(
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    14,
+                    20,
+                    MediaQuery.of(context).padding.bottom + 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    border: Border(
+                      top: BorderSide(color: AppColors.borderSubtle),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: SizedBox(
-                      height: 58,
-                      child: ElevatedButton(
-                        onPressed: disabled
-                            ? null
-                            : joined
-                            ? leaveEvent
-                            : joinEvent,
-                        style: ElevatedButton.styleFrom(
-                          elevation: 0,
-                          backgroundColor: joined
-                              ? AppColors.selectedTab
-                              : AppColors.primary,
-                          foregroundColor: AppColors.textPrimary,
-                          disabledBackgroundColor: AppColors.selectedTab,
-                          disabledForegroundColor: AppColors.textPrimary,
-                          shape: RoundedRectangleBorder(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 58,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
                             borderRadius: AppRadii.search,
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Text(
+                            '$spotsLeft spots left',
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                        child: loading
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Text(
-                                buttonText,
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
                       ),
-                    ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: SizedBox(
+                          height: 58,
+                          child: ElevatedButton(
+                            onPressed: disabled ? null : action,
+                            style: ElevatedButton.styleFrom(
+                              elevation: 0,
+                              backgroundColor: (joined || waiting)
+                                  ? AppColors.selectedTab
+                                  : AppColors.primary,
+                              foregroundColor: AppColors.textPrimary,
+                              disabledBackgroundColor: AppColors.selectedTab,
+                              disabledForegroundColor: AppColors.textPrimary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: AppRadii.search,
+                              ),
+                            ),
+                            child: loading
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Text(
+                                    hasError ? 'Unavailable' : buttonText,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             );
           },
         );

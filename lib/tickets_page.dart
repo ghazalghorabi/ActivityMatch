@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
+import 'event_categories.dart';
 import 'base_widgets.dart';
 import 'create_event_page.dart';
 import 'model.dart';
@@ -28,21 +29,31 @@ class _TicketsPageState extends State<TicketsPage> {
   ) {
     final data = document.data()!;
 
-    final activity = data['activity'] as String? ?? 'Other';
+    // Safely read the event date.
+    final rawDate = data['date'];
 
-    final category = switch (activity) {
-      'Padel' || 'Running' || 'Gym' => 'Sports',
-      'Drinks' => 'Nightlife',
-      'Coffee' => 'Food',
-      'Gaming' => 'Games',
-      'Walk' => 'Wellness',
-      _ => 'Other',
-    };
+    DateTime eventDate;
+
+    if (rawDate is Timestamp) {
+      eventDate = rawDate.toDate();
+    } else if (rawDate is DateTime) {
+      eventDate = rawDate;
+    } else if (rawDate is String) {
+      eventDate = DateTime.tryParse(rawDate) ?? DateTime(1970);
+    } else {
+      eventDate = DateTime(1970);
+    }
+
+    final savedCategory =
+        data['category'] as String? ?? data['activity'] as String? ?? 'Other';
+    final category = EventCategories.all.contains(savedCategory)
+        ? savedCategory
+        : 'Other';
 
     return ActivityEvent(
       id: document.id,
       title: data['title'] as String? ?? '',
-      date: (data['date'] as Timestamp).toDate(),
+      date: eventDate,
       location: data['location'] as String? ?? '',
       availableSpots: (data['availableSpots'] as num?)?.toInt() ?? 0,
       imageUrl: data['imageUrl'] as String? ?? '',
@@ -53,15 +64,11 @@ class _TicketsPageState extends State<TicketsPage> {
       minAge: (data['minAge'] as num?)?.toInt() ?? 18,
       maxAge: (data['maxAge'] as num?)?.toInt() ?? 70,
       capacity: (data['capacity'] as num?)?.toInt() ?? 0,
-      activity: activity,
+      activity: category,
       city: data['city'] as String? ?? '',
       distance: data['distance'] as String? ?? '',
       participantCount: (data['participantCount'] as num?)?.toInt() ?? 0,
-      tags: <String>{
-        category,
-        activity,
-        ...List<String>.from(data['tags'] ?? []),
-      }.toList(),
+      tags: <String>[category],
     );
   }
 
@@ -369,7 +376,72 @@ class _TicketsPageState extends State<TicketsPage> {
     }
 
     if (selectedTicketCategory == 'Queued') {
-      return _emptyMessage('No queued events yet');
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) {
+        return _emptyMessage('Please log in to see your queued events');
+      }
+
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collectionGroup('waitlist')
+            .where('userId', isEqualTo: user.uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _emptyMessage(
+              'Could not load queued events: ${snapshot.error}',
+            );
+          }
+
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final queuedDocs = snapshot.data!.docs;
+
+          if (queuedDocs.isEmpty) {
+            return _emptyMessage('No queued events yet');
+          }
+
+          return Column(
+            children: queuedDocs.map((queuedDoc) {
+              final eventRef = queuedDoc.reference.parent.parent;
+
+              if (eventRef == null) {
+                return const SizedBox.shrink();
+              }
+
+              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: eventRef.snapshots(),
+                builder: (context, eventSnapshot) {
+                  if (eventSnapshot.hasError) {
+                    return _emptyMessage('Could not load a queued event');
+                  }
+
+                  if (!eventSnapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+
+                  if (!eventSnapshot.data!.exists) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final event = _eventFromFirestore(eventSnapshot.data!);
+                  if (applyTicketFilters([event], ticketFilter).isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return _buildRealEventCard(event);
+                },
+              );
+            }).toList(),
+          );
+        },
+      );
     }
 
     if (selectedTicketCategory == 'Hosting') {

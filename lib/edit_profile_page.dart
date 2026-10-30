@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'app_theme.dart';
-import 'interests_page.dart';
 import 'event_categories.dart';
 
 class EditProfilePage extends StatefulWidget {
@@ -17,6 +16,66 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final locationController = TextEditingController();
   final bioController = TextEditingController();
   final selectedInterests = <String>{};
+  static const List<String> swedishCities = [
+    'Göteborg',
+    'Stockholm',
+    'Malmö',
+    'Uppsala',
+    'Linköping',
+    'Västerås',
+    'Örebro',
+    'Helsingborg',
+    'Jönköping',
+    'Norrköping',
+    'Lund',
+    'Umeå',
+    'Gävle',
+    'Borås',
+    'Eskilstuna',
+    'Södertälje',
+    'Karlstad',
+    'Täby',
+    'Halmstad',
+    'Växjö',
+    'Sundsvall',
+    'Luleå',
+    'Trollhättan',
+    'Östersund',
+    'Borlänge',
+    'Falun',
+    'Kalmar',
+    'Skövde',
+    'Kristianstad',
+    'Karlskrona',
+    'Uddevalla',
+    'Varberg',
+    'Kungsbacka',
+    'Alingsås',
+    'Kungälv',
+    'Mölndal',
+    'Partille',
+    'Lerum',
+    'Lidköping',
+    'Mariestad',
+    'Nyköping',
+    'Nässjö',
+    'Motala',
+    'Piteå',
+    'Skellefteå',
+    'Örnsköldsvik',
+    'Visby',
+    'Ystad',
+    'Trelleborg',
+    'Landskrona',
+    'Ängelholm',
+    'Falkenberg',
+    'Enköping',
+    'Sala',
+    'Arvika',
+    'Kiruna',
+    'Gällivare',
+    'Marstrand',
+  ];
   DateTime? birthDate;
   bool saving = false;
 
@@ -85,6 +144,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
       );
       return;
     }
+    if (!swedishCities.contains(locationController.text.trim())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a city from the suggestions'),
+        ),
+      );
+      return;
+    }
     setState(() => saving = true);
     try {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
@@ -105,6 +172,56 @@ class _EditProfilePageState extends State<EditProfilePage> {
     } finally {
       if (mounted) setState(() => saving = false);
     }
+  }
+
+  Widget citySelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Location', style: AppTextStyles.formLabel),
+        const SizedBox(height: AppSpacing.fieldLabelBottom),
+
+        Autocomplete<String>(
+          key: ValueKey(locationController.text),
+          initialValue: TextEditingValue(text: locationController.text),
+
+          optionsBuilder: (TextEditingValue value) {
+            final query = value.text.trim().toLowerCase();
+
+            if (query.isEmpty) {
+              return swedishCities;
+            }
+
+            return swedishCities.where(
+              (city) => city.toLowerCase().contains(query),
+            );
+          },
+
+          onSelected: (String city) {
+            locationController.text = city;
+          },
+
+          fieldViewBuilder:
+              (context, textEditingController, focusNode, onFieldSubmitted) {
+                return TextField(
+                  controller: textEditingController,
+                  focusNode: focusNode,
+                  style: AppTextStyles.bodyLarge,
+                  decoration: AppInputs.field(
+                    hint: 'Search for your city',
+                    icon: Icons.location_city_outlined,
+                  ),
+                  onChanged: (value) {
+                    // Only a city chosen from the suggestions is valid.
+                    locationController.clear();
+                  },
+                );
+              },
+        ),
+
+        const SizedBox(height: AppSpacing.xl),
+      ],
+    );
   }
 
   Widget field(
@@ -177,7 +294,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
-            field('Location', locationController),
+            citySelector(),
             field('Bio', bioController, lines: 4),
             const Text('Interests', style: AppTextStyles.formLabel),
             const SizedBox(height: AppSpacing.sm),
