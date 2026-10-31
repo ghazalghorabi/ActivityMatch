@@ -33,6 +33,103 @@ class _EditEventPageState extends State<EditEventPage> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+  bool _showErrors = false;
+
+  final _coverKey = GlobalKey();
+  final _titleKey = GlobalKey();
+  final _categoryKey = GlobalKey();
+  final _descriptionKey = GlobalKey();
+  final _dateKey = GlobalKey();
+  final _timeKey = GlobalKey();
+  final _locationKey = GlobalKey();
+
+  static final _timePattern = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
+  static const _errorColor = Color(0xFFF87171);
+
+  String? get _coverError => _showErrors && _selectedCoverUrl == null
+      ? 'Please choose a cover photo.'
+      : null;
+  String? get _titleError => _showErrors && _title.text.trim().isEmpty
+      ? 'Please enter an event title.'
+      : null;
+  String? get _descriptionError =>
+      _showErrors && _description.text.trim().isEmpty
+      ? 'Please enter a description.'
+      : null;
+  String? get _dateError =>
+      _showErrors && _date == null ? 'Please select an event date.' : null;
+  String? get _locationError => _showErrors && _selectedPlace == null
+      ? 'Please select an event location.'
+      : null;
+
+  DateTime? _eventTime(String value) {
+    if (_date == null || !_timePattern.hasMatch(value.trim())) return null;
+    final parts = value.trim().split(':').map(int.parse).toList();
+    return DateTime(_date!.year, _date!.month, _date!.day, parts[0], parts[1]);
+  }
+
+  String? get _startError {
+    if (!_showErrors) return null;
+    if (_startTime.text.trim().isEmpty) return 'Select a start time.';
+    if (!_timePattern.hasMatch(_startTime.text.trim()))
+      return 'Use HH:mm (e.g. 13:00).';
+    final start = _eventTime(_startTime.text);
+    if (start != null && !start.isAfter(DateTime.now())) {
+      return 'Start time must be in the future.';
+    }
+    return null;
+  }
+
+  String? get _endError {
+    if (!_showErrors) return null;
+    if (_endTime.text.trim().isEmpty) return 'Select an end time.';
+    if (!_timePattern.hasMatch(_endTime.text.trim()))
+      return 'Use HH:mm (e.g. 14:00).';
+    final start = _eventTime(_startTime.text);
+    final end = _eventTime(_endTime.text);
+    if (start != null && end != null && !end.isAfter(start)) {
+      return 'End time must be after start time.';
+    }
+    return null;
+  }
+
+  Widget _errorText(String? message) => message == null
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            message,
+            style: const TextStyle(color: _errorColor, fontSize: 12),
+          ),
+        );
+
+  Widget _label(String text) => Padding(
+    padding: const EdgeInsets.only(top: AppSpacing.xxl, bottom: AppSpacing.sm),
+    child: Text('$text *', style: AppTextStyles.formLabel),
+  );
+
+  void _scrollToFirstError() {
+    final keys = <GlobalKey>[
+      if (_coverError != null) _coverKey,
+      if (_titleError != null) _titleKey,
+      if (_descriptionError != null) _descriptionKey,
+      if (_dateError != null) _dateKey,
+      if (_startError != null || _endError != null) _timeKey,
+      if (_locationError != null) _locationKey,
+    ];
+    if (keys.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = keys.first.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 300),
+          alignment: 0.12,
+        );
+      }
+    });
+  }
 
   DocumentReference<Map<String, dynamic>> get _eventRef =>
       FirebaseFirestore.instance.collection('events').doc(widget.eventId);
@@ -120,19 +217,18 @@ class _EditEventPageState extends State<EditEventPage> {
     if (_saving) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final timePattern = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
+    setState(() => _showErrors = true);
     final startText = _startTime.text.trim();
     final endText = _endTime.text.trim();
     if (_title.text.trim().isEmpty ||
         _description.text.trim().isEmpty ||
         _selectedPlace == null ||
         _date == null ||
-        !timePattern.hasMatch(startText) ||
-        !timePattern.hasMatch(endText)) {
+        !_timePattern.hasMatch(startText) ||
+        !_timePattern.hasMatch(endText)) {
+      _scrollToFirstError();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Complete all fields. Use HH:mm for times.'),
-        ),
+        const SnackBar(content: Text('Please correct the highlighted fields.')),
       );
       return;
     }
@@ -154,6 +250,7 @@ class _EditEventPageState extends State<EditEventPage> {
       endParts[1],
     );
     if (!start.isAfter(DateTime.now()) || !end.isAfter(start)) {
+      _scrollToFirstError();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Choose a future start and a later end time.'),
@@ -210,23 +307,31 @@ class _EditEventPageState extends State<EditEventPage> {
   }
 
   Widget _field(
-    String label,
-    TextEditingController controller, {
+    TextEditingController controller,
+    String hint, {
     int lines = 1,
+    String? error,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
-      child: TextField(
-        controller: controller,
-        maxLines: lines,
-        style: const TextStyle(color: AppColors.textPrimary),
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: label.contains('time') ? 'HH:mm' : null,
-          filled: true,
-          fillColor: AppColors.surface,
-          border: const OutlineInputBorder(),
-        ),
+    return TextField(
+      controller: controller,
+      maxLines: lines,
+      onChanged: (_) {
+        if (_showErrors) setState(() {});
+      },
+      style: const TextStyle(color: AppColors.textPrimary),
+      decoration: AppInputs.field(hint: hint).copyWith(
+        enabledBorder: error == null
+            ? null
+            : OutlineInputBorder(
+                borderRadius: AppRadii.field,
+                borderSide: const BorderSide(color: _errorColor),
+              ),
+        focusedBorder: error == null
+            ? null
+            : OutlineInputBorder(
+                borderRadius: AppRadii.field,
+                borderSide: const BorderSide(color: _errorColor),
+              ),
       ),
     );
   }
@@ -298,101 +403,148 @@ class _EditEventPageState extends State<EditEventPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _coverPicker(),
-                  const SizedBox(height: AppSpacing.lg),
-                  _field('Event title', _title),
-                  const Text(
-                    'Category',
-                    style: TextStyle(color: AppColors.textPrimary),
+                  Column(
+                    key: _coverKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [_coverPicker(), _errorText(_coverError)],
                   ),
+                  _label('Event title'),
+                  Column(
+                    key: _titleKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _field(_title, 'Event name', error: _titleError),
+                      _errorText(_titleError),
+                    ],
+                  ),
+                  _label('Category'),
                   Wrap(
-                    spacing: 8,
+                    key: _categoryKey,
+                    spacing: 10,
+                    runSpacing: 12,
                     children: _activities
                         .map(
                           (item) => ChoiceChip(
                             label: Text(item),
                             selected: _activity == item,
+                            showCheckmark: false,
                             selectedColor: AppColors.primary,
                             onSelected: (_) => setState(() => _activity = item),
                           ),
                         )
                         .toList(),
                   ),
-                  const SizedBox(height: 18),
-                  _field('Description', _description, lines: 3),
-                  ListTile(
-                    tileColor: AppColors.surface,
-                    title: Text(
-                      _date == null
-                          ? 'Select date'
-                          : '${_date!.day}/${_date!.month}/${_date!.year}',
-                      style: const TextStyle(color: AppColors.textPrimary),
-                    ),
-                    leading: const Icon(Icons.calendar_today_outlined),
-                    onTap: _pickDate,
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
+                  _label('Description'),
+                  Column(
+                    key: _descriptionKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: _field('Start time', _startTime)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _field('End time', _endTime)),
+                      _field(
+                        _description,
+                        'Tell people about the event',
+                        lines: 3,
+                        error: _descriptionError,
+                      ),
+                      _errorText(_descriptionError),
                     ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Location *',
-                          style: AppTextStyles.formLabel,
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        EventPlaceField(
-                          value: _selectedPlace,
-                          onChanged: (place) =>
-                              setState(() => _selectedPlace = place),
-                        ),
-                        if (_selectedPlace == null)
-                          const Padding(
-                            padding: EdgeInsets.only(top: AppSpacing.sm),
-                            child: Text(
-                              'Choose a location from the suggestions (also required for older events).',
-                              style: AppTextStyles.bodySecondary,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Row(
+                  _label('Date'),
+                  Column(
+                    key: _dateKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Expanded(
-                        child: Text(
-                          'Capacity',
-                          style: TextStyle(color: AppColors.textPrimary),
+                      ListTile(
+                        tileColor: AppColors.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: AppRadii.field,
+                        ),
+                        title: Text(
+                          _date == null
+                              ? 'Select date'
+                              : '${_date!.day}/${_date!.month}/${_date!.year}',
+                          style: const TextStyle(color: AppColors.textPrimary),
+                        ),
+                        leading: const Icon(Icons.calendar_today_outlined),
+                        onTap: _pickDate,
+                      ),
+                      _errorText(_dateError),
+                    ],
+                  ),
+                  _label('Time'),
+                  Row(
+                    key: _timeKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _field(
+                              _startTime,
+                              'Start time (HH:mm)',
+                              error: _startError,
+                            ),
+                            _errorText(_startError),
+                          ],
                         ),
                       ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _field(
+                              _endTime,
+                              'End time (HH:mm)',
+                              error: _endError,
+                            ),
+                            _errorText(_endError),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  _label('Location'),
+                  Column(
+                    key: _locationKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      EventPlaceField(
+                        value: _selectedPlace,
+                        onChanged: (place) =>
+                            setState(() => _selectedPlace = place),
+                      ),
+                      _errorText(_locationError),
+                      if (_selectedPlace == null && !_showErrors)
+                        const Padding(
+                          padding: EdgeInsets.only(top: AppSpacing.sm),
+                          child: Text(
+                            'Choose a location from the suggestions (also required for older events).',
+                            style: AppTextStyles.bodySecondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                  _label('Participants'),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
                       IconButton(
                         onPressed: _capacity > 1
                             ? () => setState(() => _capacity--)
                             : null,
                         icon: const Icon(Icons.remove),
                       ),
-                      Text(
-                        '$_capacity',
-                        style: const TextStyle(color: AppColors.textPrimary),
-                      ),
+                      Text('$_capacity people', style: AppTextStyles.bodyLarge),
                       IconButton(
                         onPressed: () => setState(() => _capacity++),
                         icon: const Icon(Icons.add),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  _label('Age'),
                   Text(
-                    'Age: ${_age.start.round()} – ${_age.end.round()}',
-                    style: const TextStyle(color: AppColors.textPrimary),
+                    '${_age.start.round()} – ${_age.end.round() == 70 ? '70+' : _age.end.round()} years',
                   ),
                   RangeSlider(
                     values: _age,
@@ -402,15 +554,13 @@ class _EditEventPageState extends State<EditEventPage> {
                     activeColor: AppColors.primary,
                     onChanged: (value) => setState(() => _age = value),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xxl),
                   SizedBox(
                     width: double.infinity,
-                    height: 54,
+                    height: AppSizes.primaryButtonHeight,
                     child: ElevatedButton(
                       onPressed: _saving ? null : _save,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                      ),
+                      style: AppButtons.primary,
                       child: _saving
                           ? const CircularProgressIndicator()
                           : const Text('Save Changes'),
