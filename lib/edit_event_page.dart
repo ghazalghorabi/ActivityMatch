@@ -1,0 +1,574 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'app_theme.dart';
+import 'event_place_field.dart';
+import 'event_cover_gallery.dart';
+import 'event_categories.dart';
+
+class EditEventPage extends StatefulWidget {
+  final String eventId;
+
+  const EditEventPage({super.key, required this.eventId});
+
+  @override
+  State<EditEventPage> createState() => _EditEventPageState();
+}
+
+class _EditEventPageState extends State<EditEventPage> {
+  final _title = TextEditingController();
+  final _description = TextEditingController();
+  SelectedEventPlace? _selectedPlace;
+  String? _selectedCoverUrl;
+  final _startTime = TextEditingController();
+  final _endTime = TextEditingController();
+
+  final List<String> _activities = EventCategories.all;
+
+  String _activity = 'Sports';
+  DateTime? _date;
+  int _capacity = 1;
+  RangeValues _age = const RangeValues(18, 70);
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+  bool _showErrors = false;
+
+  final _coverKey = GlobalKey();
+  final _titleKey = GlobalKey();
+  final _categoryKey = GlobalKey();
+  final _descriptionKey = GlobalKey();
+  final _dateKey = GlobalKey();
+  final _timeKey = GlobalKey();
+  final _locationKey = GlobalKey();
+
+  static final _timePattern = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
+  static const _errorColor = Color(0xFFF87171);
+
+  String? get _coverError => _showErrors && _selectedCoverUrl == null
+      ? 'Please choose a cover photo.'
+      : null;
+  String? get _titleError => _showErrors && _title.text.trim().isEmpty
+      ? 'Please enter an event title.'
+      : null;
+  String? get _descriptionError =>
+      _showErrors && _description.text.trim().isEmpty
+      ? 'Please enter a description.'
+      : null;
+  String? get _dateError =>
+      _showErrors && _date == null ? 'Please select an event date.' : null;
+  String? get _locationError => _showErrors && _selectedPlace == null
+      ? 'Please select an event location.'
+      : null;
+
+  DateTime? _eventTime(String value) {
+    if (_date == null || !_timePattern.hasMatch(value.trim())) return null;
+    final parts = value.trim().split(':').map(int.parse).toList();
+    return DateTime(_date!.year, _date!.month, _date!.day, parts[0], parts[1]);
+  }
+
+  String? get _startError {
+    if (!_showErrors) return null;
+    if (_startTime.text.trim().isEmpty) return 'Select a start time.';
+    if (!_timePattern.hasMatch(_startTime.text.trim()))
+      return 'Use HH:mm (e.g. 13:00).';
+    final start = _eventTime(_startTime.text);
+    if (start != null && !start.isAfter(DateTime.now())) {
+      return 'Start time must be in the future.';
+    }
+    return null;
+  }
+
+  String? get _endError {
+    if (!_showErrors) return null;
+    if (_endTime.text.trim().isEmpty) return 'Select an end time.';
+    if (!_timePattern.hasMatch(_endTime.text.trim()))
+      return 'Use HH:mm (e.g. 14:00).';
+    final start = _eventTime(_startTime.text);
+    final end = _eventTime(_endTime.text);
+    if (start != null && end != null && !end.isAfter(start)) {
+      return 'End time must be after start time.';
+    }
+    return null;
+  }
+
+  Widget _errorText(String? message) => message == null
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            message,
+            style: const TextStyle(color: _errorColor, fontSize: 12),
+          ),
+        );
+
+  Widget _label(String text) => Padding(
+    padding: const EdgeInsets.only(top: AppSpacing.xxl, bottom: AppSpacing.sm),
+    child: Text('$text *', style: AppTextStyles.formLabel),
+  );
+
+  void _scrollToFirstError() {
+    final keys = <GlobalKey>[
+      if (_coverError != null) _coverKey,
+      if (_titleError != null) _titleKey,
+      if (_descriptionError != null) _descriptionKey,
+      if (_dateError != null) _dateKey,
+      if (_startError != null || _endError != null) _timeKey,
+      if (_locationError != null) _locationKey,
+    ];
+    if (keys.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = keys.first.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 300),
+          alignment: 0.12,
+        );
+      }
+    });
+  }
+
+  DocumentReference<Map<String, dynamic>> get _eventRef =>
+      FirebaseFirestore.instance.collection('events').doc(widget.eventId);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEvent();
+  }
+
+  Future<void> _loadEvent() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('Please log in first.');
+      final snapshot = await _eventRef.get();
+      if (!snapshot.exists) throw Exception('Event not found.');
+      final data = snapshot.data()!;
+      if (data['hostId'] != user.uid) {
+        throw Exception('Only the host can edit this event.');
+      }
+      if ((data['status'] ?? 'active') != 'active') {
+        throw Exception('Cancelled events cannot be edited.');
+      }
+      if (!mounted) return;
+      setState(() {
+        _title.text = data['title'] as String? ?? '';
+        _description.text = data['description'] as String? ?? '';
+        final cover = data['imageUrl'] as String?;
+        _selectedCoverUrl = cover != null && cover.isNotEmpty ? cover : null;
+        final savedPlace = SelectedEventPlace.fromFirestore(data);
+        _selectedPlace = savedPlace.placeId.isNotEmpty ? savedPlace : null;
+        _startTime.text = data['time'] as String? ?? '';
+        _endTime.text = data['endTime'] as String? ?? '';
+        final savedCategory =
+            data['category'] as String? ??
+            data['activity'] as String? ??
+            'Other';
+
+        _activity = EventCategories.all.contains(savedCategory)
+            ? savedCategory
+            : 'Other';
+        _date = (data['date'] as Timestamp?)?.toDate();
+        _capacity = (data['capacity'] as num?)?.toInt() ?? 1;
+        _age = RangeValues(
+          ((data['minAge'] as num?)?.toDouble() ?? 18).clamp(18, 70),
+          ((data['maxAge'] as num?)?.toDouble() ?? 70).clamp(18, 70),
+        );
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _description.dispose();
+    _startTime.dispose();
+    _endTime.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final initial =
+        _date != null &&
+            !_date!.isBefore(DateTime(now.year, now.month, now.day))
+        ? _date!
+        : now;
+    final chosen = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(2035),
+    );
+    if (chosen != null && mounted) setState(() => _date = chosen);
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    setState(() => _showErrors = true);
+    final startText = _startTime.text.trim();
+    final endText = _endTime.text.trim();
+    if (_title.text.trim().isEmpty ||
+        _description.text.trim().isEmpty ||
+        _selectedPlace == null ||
+        _date == null ||
+        !_timePattern.hasMatch(startText) ||
+        !_timePattern.hasMatch(endText)) {
+      _scrollToFirstError();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please correct the highlighted fields.')),
+      );
+      return;
+    }
+
+    final startParts = startText.split(':').map(int.parse).toList();
+    final endParts = endText.split(':').map(int.parse).toList();
+    final start = DateTime(
+      _date!.year,
+      _date!.month,
+      _date!.day,
+      startParts[0],
+      startParts[1],
+    );
+    final end = DateTime(
+      _date!.year,
+      _date!.month,
+      _date!.day,
+      endParts[0],
+      endParts[1],
+    );
+    if (!start.isAfter(DateTime.now()) || !end.isAfter(start)) {
+      _scrollToFirstError();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose a future start and a later end time.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(_eventRef);
+        if (!snapshot.exists) throw Exception('Event no longer exists.');
+        final data = snapshot.data()!;
+        if (data['hostId'] != user.uid)
+          throw Exception('You are not the host.');
+        if ((data['status'] ?? 'active') != 'active') {
+          throw Exception('This event is cancelled.');
+        }
+        final participants = (data['participantCount'] as num?)?.toInt() ?? 0;
+        if (_capacity < participants) {
+          throw Exception('Capacity cannot be below $participants attendees.');
+        }
+        transaction.update(_eventRef, {
+          'title': _title.text.trim(),
+          'description': _description.text.trim(),
+          if (_selectedCoverUrl != null) 'imageUrl': _selectedCoverUrl!,
+          ..._selectedPlace!.toFirestore(),
+          'activity': _activity,
+          'category': _activity,
+          'tags': [_activity],
+          'date': Timestamp.fromDate(start),
+          'time': startText,
+          'endTime': endText,
+          'duration': '$startText – $endText',
+          'capacity': _capacity,
+          'availableSpots': _capacity - participants,
+          'minAge': _age.start.round(),
+          'maxAge': _age.end.round(),
+        });
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Event updated successfully!')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not update event: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Widget _field(
+    TextEditingController controller,
+    String hint, {
+    int lines = 1,
+    String? error,
+  }) {
+    return TextField(
+      controller: controller,
+      maxLines: lines,
+      onChanged: (_) {
+        if (_showErrors) setState(() {});
+      },
+      style: const TextStyle(color: AppColors.textPrimary),
+      decoration: AppInputs.field(hint: hint).copyWith(
+        enabledBorder: error == null
+            ? null
+            : OutlineInputBorder(
+                borderRadius: AppRadii.field,
+                borderSide: const BorderSide(color: _errorColor),
+              ),
+        focusedBorder: error == null
+            ? null
+            : OutlineInputBorder(
+                borderRadius: AppRadii.field,
+                borderSide: const BorderSide(color: _errorColor),
+              ),
+      ),
+    );
+  }
+
+  Widget _coverPicker() => GestureDetector(
+    onTap: () async {
+      final chosen = await EventCoverGallery.choose(
+        context,
+        selected: _selectedCoverUrl,
+      );
+      if (chosen != null && mounted) setState(() => _selectedCoverUrl = chosen);
+    },
+    child: Container(
+      height: AppSizes.photoHeight,
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: AppDecorations.input,
+      child: _selectedCoverUrl == null
+          ? const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add_photo_alternate_outlined, size: 35),
+                SizedBox(height: AppSpacing.sm),
+                Text('Choose cover photo'),
+              ],
+            )
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  _selectedCoverUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(Icons.image_not_supported_outlined),
+                  ),
+                ),
+                const Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: Chip(label: Text('Change cover')),
+                ),
+              ],
+            ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        title: const Text('Edit Event'),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                ),
+              ),
+            )
+          : SingleChildScrollView(
+              padding: AppSpacing.page,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Column(
+                    key: _coverKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [_coverPicker(), _errorText(_coverError)],
+                  ),
+                  _label('Event title'),
+                  Column(
+                    key: _titleKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _field(_title, 'Event name', error: _titleError),
+                      _errorText(_titleError),
+                    ],
+                  ),
+                  _label('Category'),
+                  Wrap(
+                    key: _categoryKey,
+                    spacing: 10,
+                    runSpacing: 12,
+                    children: _activities
+                        .map(
+                          (item) => ChoiceChip(
+                            label: Text(item),
+                            selected: _activity == item,
+                            showCheckmark: false,
+                            selectedColor: AppColors.primary,
+                            onSelected: (_) => setState(() => _activity = item),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  _label('Description'),
+                  Column(
+                    key: _descriptionKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _field(
+                        _description,
+                        'Tell people about the event',
+                        lines: 3,
+                        error: _descriptionError,
+                      ),
+                      _errorText(_descriptionError),
+                    ],
+                  ),
+                  _label('Date'),
+                  Column(
+                    key: _dateKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        tileColor: AppColors.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: AppRadii.field,
+                        ),
+                        title: Text(
+                          _date == null
+                              ? 'Select date'
+                              : '${_date!.day}/${_date!.month}/${_date!.year}',
+                          style: const TextStyle(color: AppColors.textPrimary),
+                        ),
+                        leading: const Icon(Icons.calendar_today_outlined),
+                        onTap: _pickDate,
+                      ),
+                      _errorText(_dateError),
+                    ],
+                  ),
+                  _label('Time'),
+                  Row(
+                    key: _timeKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _field(
+                              _startTime,
+                              'Start time (HH:mm)',
+                              error: _startError,
+                            ),
+                            _errorText(_startError),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _field(
+                              _endTime,
+                              'End time (HH:mm)',
+                              error: _endError,
+                            ),
+                            _errorText(_endError),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  _label('Location'),
+                  Column(
+                    key: _locationKey,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      EventPlaceField(
+                        value: _selectedPlace,
+                        onChanged: (place) =>
+                            setState(() => _selectedPlace = place),
+                      ),
+                      _errorText(_locationError),
+                      if (_selectedPlace == null && !_showErrors)
+                        const Padding(
+                          padding: EdgeInsets.only(top: AppSpacing.sm),
+                          child: Text(
+                            'Choose a location from the suggestions (also required for older events).',
+                            style: AppTextStyles.bodySecondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                  _label('Participants'),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: _capacity > 1
+                            ? () => setState(() => _capacity--)
+                            : null,
+                        icon: const Icon(Icons.remove),
+                      ),
+                      Text('$_capacity people', style: AppTextStyles.bodyLarge),
+                      IconButton(
+                        onPressed: () => setState(() => _capacity++),
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                  _label('Age'),
+                  Text(
+                    '${_age.start.round()} – ${_age.end.round() == 70 ? '70+' : _age.end.round()} years',
+                  ),
+                  RangeSlider(
+                    values: _age,
+                    min: 18,
+                    max: 70,
+                    divisions: 52,
+                    activeColor: AppColors.primary,
+                    onChanged: (value) => setState(() => _age = value),
+                  ),
+                  const SizedBox(height: AppSpacing.xxl),
+                  SizedBox(
+                    width: double.infinity,
+                    height: AppSizes.primaryButtonHeight,
+                    child: ElevatedButton(
+                      onPressed: _saving ? null : _save,
+                      style: AppButtons.primary,
+                      child: _saving
+                          ? const CircularProgressIndicator()
+                          : const Text('Save Changes'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
