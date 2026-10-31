@@ -32,6 +32,23 @@ class _HomePageState extends State<HomePage> {
   final Random _random = Random();
   final List<String> _randomEventIds = [];
 
+  late final Stream<User?> _authStream;
+
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _eventsStream;
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _profileStream;
+
+  String? _profileUserId;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _authStream = FirebaseAuth.instance.authStateChanges();
+
+    _eventsStream = FirebaseFirestore.instance.collection('events').snapshots();
+  }
+
   List<ActivityEvent> getRandomEvents(List<ActivityEvent> events) {
     final byId = {for (final event in events) event.id: event};
     final ids = byId.keys.toSet();
@@ -277,7 +294,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: _authStream,
       builder: (context, authSnapshot) {
         if (authSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -288,13 +305,19 @@ class _HomePageState extends State<HomePage> {
 
         final user = authSnapshot.data;
 
-        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: user == null
+        if (user?.uid != _profileUserId) {
+          _profileUserId = user?.uid;
+
+          _profileStream = user == null
               ? null
               : FirebaseFirestore.instance
                     .collection('users')
                     .doc(user.uid)
-                    .snapshots(),
+                    .snapshots();
+        }
+
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: _profileStream,
           builder: (context, snapshot) {
             if (user != null && snapshot.hasError) {
               return Scaffold(
@@ -319,9 +342,7 @@ class _HomePageState extends State<HomePage> {
             final userLocation = data?['location'] as String? ?? '';
 
             return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('events')
-                  .snapshots(),
+              stream: _eventsStream,
               builder: (context, eventsSnapshot) {
                 if (eventsSnapshot.hasError) {
                   return Scaffold(
@@ -383,13 +404,29 @@ class _HomePageState extends State<HomePage> {
                             delegate: SliverChildListDelegate([
                               const Header(),
                               const SizedBox(height: AppSpacing.xl),
-                              SearchSection(
-                                controller: searchController,
-                                onFilterPressed: openFilters,
-                                onSearch: (text) {
-                                  setState(() {});
-                                },
-                              ),
+                            ]),
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xl,
+                          ),
+                          sliver: SliverToBoxAdapter(
+                            child: SearchSection(
+                              controller: searchController,
+                              onFilterPressed: openFilters,
+                              onSearch: (text) {
+                                setState(() {});
+                              },
+                            ),
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xl,
+                          ),
+                          sliver: SliverList(
+                            delegate: SliverChildListDelegate([
                               const SizedBox(height: AppSpacing.lg),
                               CategorySelector(
                                 categories: categories,
