@@ -119,13 +119,14 @@ Future<TicketFilter?> showTicketFilter(
   bool isExplore = false,
 }) {
   final activities = [
-    'Padel',
-    'Running',
-    'Drinks',
-    'Coffee',
-    'Walk',
-    'Gym',
-    'Gaming',
+    'Sports',
+    'Food & Drinks',
+    'Outdoors',
+    'Entertainment',
+    'Arts & Culture',
+    'Social',
+    'Wellness',
+    'Travel',
   ];
 
   return showModalBottomSheet<TicketFilter>(
@@ -332,7 +333,6 @@ Future<TicketFilter?> showTicketFilter(
                     ),
                   ],
                   if (isExplore) ...[
-                    title('Only events with available spots'),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Only events with available spots'),
